@@ -5,12 +5,19 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.future import select
+from typing import AsyncGenerator
 
 # データベース設定
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/database.db")
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:////data/database.db")
+engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+SessionLocal = sessionmaker(
+    engine,
+    class_=AsyncSession,
+    expire_on_commit=False
+)
 Base = declarative_base()
 
 # データベース初期化関数
@@ -19,17 +26,18 @@ async def init_db():
         print("🚀 データベース初期化開始")
         
         # テーブルの作成
-        Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+            await conn.run_sync(Base.metadata.create_all)
         
         # テーブルの存在確認
-        with engine.connect() as conn:
-            result = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'")
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'"))
             if not result.fetchone():
                 raise Exception("transactionsテーブルが作成されませんでした")
             
             # テーブルのカラムを確認
-            result = conn.execute("PRAGMA table_info(transactions)")
+            result = await conn.execute(text("PRAGMA table_info(transactions)"))
             columns = [row[1] for row in result.fetchall()]
             print(f"✅ transactionsテーブルのカラム: {columns}")
             
@@ -68,15 +76,15 @@ EMOJI_POINTS = {
 }
 
 # データベースセッションの取得
-async def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[Session, None]:
+    async with SessionLocal() as session:
+        try:
+            yield session
+        finally:
+            await session.close()
 
 # ポイント付与処理
-async def award_points(db, recipient_id, giver_id, emoji_id, points):
+async def award_points(db: AsyncSession, recipient_id, giver_id, emoji_id, points):
     try:
         transaction = Transaction(
             recipient_id=recipient_id,
@@ -85,17 +93,17 @@ async def award_points(db, recipient_id, giver_id, emoji_id, points):
             emoji_id=emoji_id
         )
         db.add(transaction)
-        db.commit()
+        await db.commit()
         return True
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         print(f"❌ ポイント付与エラー: {e}")
         return False
 
 # ポイント集計処理
-async def calculate_points(db, user_id=None, month=None):
+async def calculate_points(db: AsyncSession, user_id=None, month=None):
     try:
-        query = db.query(Transaction.recipient_id, Transaction.points_awarded)
+        query = select(Transaction.recipient_id, Transaction.points_awarded)
         
         if user_id:
             query = query.filter(Transaction.recipient_id == user_id)
@@ -108,7 +116,8 @@ async def calculate_points(db, user_id=None, month=None):
             query = query.filter(Transaction.effective_date >= first_day)
             query = query.filter(Transaction.effective_date <= last_day)
         
-        results = query.all()
+        results = await db.execute(query)
+        results = results.all()
         
         points_dict = {}
         for recipient_id, points in results:
@@ -210,7 +219,7 @@ async def on_command_error(ctx, error):
 if __name__ == "__main__":
     try:
         # データベース初期化
-        init_db()
+        asyncio.run(init_db())
         
         # Bot起動
         bot.run(os.getenv("DISCORD_BOT_TOKEN"))
