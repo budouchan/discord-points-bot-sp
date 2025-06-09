@@ -1,8 +1,9 @@
 # database.py
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 import os
+from models import Base, Transaction
 
 # Railwayの環境変数を読み込む、なければローカルのSQLiteを使う
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/database.db")
