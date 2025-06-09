@@ -11,7 +11,8 @@ from sqlalchemy.future import select
 from typing import AsyncGenerator
 
 # データベース設定
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:////data/database.db")
+# Railwayの/dataディレクトリにデータベースを作成
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/database.db")
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(
     engine,
