@@ -3,50 +3,48 @@ from datetime import datetime
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-import asyncio
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, BigInteger
-from sqlalchemy.orm import sessionmaker, Session, declarative_base
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.future import select
-from typing import AsyncGenerator
+from database import SessionLocal, init_db
+from models import Transaction
 
-# データベース設定
-# Railwayの/dataディレクトリにデータベースを作成
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///data/database.db")
-engine = create_async_engine(DATABASE_URL, echo=False, future=True)
-SessionLocal = sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False
-)
-Base = declarative_base()
+# 環境変数読み込みとBot設定
+load_dotenv()
+intents = discord.Intents.default()
+intents.message_content = True
+intents.reactions = True
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-# データベース初期化関数
-async def init_db():
-    try:
-        print("🚀 データベース初期化開始")
-        
-        # テーブルの作成
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
-        
-        # テーブルの存在確認
-        async with engine.connect() as conn:
-            result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'"))
-            if not result.fetchone():
-                raise Exception("transactionsテーブルが作成されませんでした")
-            
-            # テーブルのカラムを確認
-            result = await conn.execute(text("PRAGMA table_info(transactions)"))
-            columns = [row[1] for row in result.fetchall()]
-            print(f"✅ transactionsテーブルのカラム: {columns}")
-            
-        print("✅ データベース初期化完了")
-        
-    except Exception as e:
-        print(f"❌ データベース初期化エラー: {e}")
-        raise
+# データベース設定はdatabase.pyに移動
+# DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/database.db")
+# engine = create_engine(DATABASE_URL)
+# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# Base = declarative_base()
+
+# データベース初期化関数はdatabase.pyに移動
+# async def init_db():
+#     try:
+#         print("🚀 データベース初期化開始")
+#         
+#         # テーブルの作成
+#         async with engine.begin() as conn:
+#             await conn.run_sync(Base.metadata.drop_all)
+#             await conn.run_sync(Base.metadata.create_all)
+#         
+#         # テーブルの存在確認
+#         async with engine.connect() as conn:
+#             result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'"))
+#             if not result.fetchone():
+#                 raise Exception("transactionsテーブルが作成されませんでした")
+#             
+#             # テーブルのカラムを確認
+#             result = await conn.execute(text("PRAGMA table_info(transactions)"))
+#             columns = [row[1] for row in result.fetchall()]
+#             print(f"✅ transactionsテーブルのカラム: {columns}")
+#             
+#         print("✅ データベース初期化完了")
+#         
+#     except Exception as e:
+#         print(f"❌ データベース初期化エラー: {e}")
+#         raise
 
 # トランザクションモデル
 class Transaction(Base):
@@ -76,13 +74,13 @@ EMOJI_POINTS = {
     '<:budouchan3:1379713977000394854>': 3,     # ブドウちゃん3
 }
 
-# データベースセッションの取得
-async def get_db() -> AsyncGenerator[Session, None]:
-    async with SessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
+# データベースセッションの取得（database.pyのSessionLocalを使用）
+async def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 # ポイント付与処理
 async def award_points(db: AsyncSession, recipient_id, giver_id, emoji_id, points):
