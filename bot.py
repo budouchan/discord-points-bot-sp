@@ -3,9 +3,9 @@ from datetime import datetime
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
+import asyncio
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, BigInteger
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker, Session, declarative_base
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.future import select
 from typing import AsyncGenerator
