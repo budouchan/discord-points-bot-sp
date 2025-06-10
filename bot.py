@@ -51,18 +51,6 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 #         print(f"❌ データベース初期化エラー: {e}")
 #         raise
 
-# トランザクションモデル
-class Transaction(Base):
-    __tablename__ = 'transactions'
-    
-    id = Column(Integer, primary_key=True, index=True)
-    recipient_id = Column(BigInteger, nullable=False)  # ポイントを受け取った人のID
-    points_awarded = Column(Integer, nullable=False)   # 与えられたポイント数
-    giver_id = Column(BigInteger)                     # ポイントを与えた人のID
-    emoji_id = Column(String)                         # 使用した絵文字のID
-    transaction_type = Column(String, default='react')
-    effective_date = Column(DateTime, default=datetime.utcnow)
-
 # 環境変数読み込みとBot設定
 load_dotenv()
 intents = discord.Intents.default()
