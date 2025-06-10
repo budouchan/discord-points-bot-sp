@@ -114,6 +114,49 @@ def format_ranking_message(points_dict, month=None, guild=None):
         print(f"❌ ランキングメッセージ作成エラー: {e}")
         return "❌ ランキングの作成に失敗しました"
 
+# リアクション削除イベント（新規追加）
+@bot.event
+async def on_raw_reaction_remove(payload):
+    """リアクション削除時にポイントを減算"""
+    try:
+        # Botの反応は無視
+        if payload.user_id == bot.user.id:
+            return
+            
+        # メッセージを取得
+        channel = bot.get_channel(payload.channel_id)
+        if not channel:
+            return
+            
+        message = await channel.fetch_message(payload.message_id)
+        
+        # メッセージ作成者とリアクションしたユーザーが同じ場合は無視
+        if message.author.id == payload.user_id:
+            return
+            
+        # ポイントの計算
+        emoji_str = str(payload.emoji)
+        points = EMOJI_POINTS.get(emoji_str)
+        
+        if points:
+            db = get_db()
+            try:
+                # ポイントを減算
+                transaction = Transaction(
+                    recipient_id=message.author.id,
+                    points_awarded=-points,  # マイナス値でポイントを減算
+                    giver_id=payload.user_id,
+                    emoji_id=str(payload.emoji),
+                    transaction_type='react_remove'
+                )
+                db.add(transaction)
+                db.commit()
+                print(f"✅ ポイント減算成功: {message.author.display_name} から {-points}pt")
+            finally:
+                db.close()
+    except Exception as e:
+        print(f"❌ リアクション削除処理エラー: {e}")
+
 # リアクション追加イベント（修正版）
 @bot.event
 async def on_raw_reaction_add(payload):
@@ -147,7 +190,10 @@ async def on_raw_reaction_add(payload):
                     points=points
                 )
                 if success:
-                    print(f"🎉 {message.author.display_name} が {points}pt 獲得！")
+                    # ユーザー名を取得
+                    user = bot.get_user(message.author.id)
+                    user_name = user.display_name if user else "未知のユーザー"
+                    print(f"🎉 {user_name} が {points}pt 獲得！")
             finally:
                 db.close()
     except Exception as e:
