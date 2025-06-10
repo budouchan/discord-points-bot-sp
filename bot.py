@@ -50,19 +50,20 @@ async def get_db():
         await db.close()
 
 # ポイント付与処理（修正版）
-def award_points(db, recipient_id, giver_id, emoji_id, points):
+async def award_points(db: AsyncSession, recipient_id, giver_id, emoji_id, points):
     try:
         transaction = Transaction(
             recipient_id=recipient_id,
             points_awarded=points,
             giver_id=giver_id,
-            emoji_id=emoji_id
+            emoji_id=emoji_id,
+            transaction_type='react'
         )
         db.add(transaction)
-        db.commit()
+        await db.commit()
         return True
     except Exception as e:
-        db.rollback()
+        await db.rollback()
         print(f"❌ ポイント付与エラー: {e}")
         return False
 
@@ -123,9 +124,8 @@ async def on_raw_reaction_add(payload):
         points = EMOJI_POINTS.get(emoji_str)
         
         if points:
-            db = get_db()
-            try:
-                award_points(
+            async with get_db() as db:
+                await award_points(
                     db,
                     recipient_id=payload.message_id,
                     giver_id=payload.user_id,
@@ -134,6 +134,8 @@ async def on_raw_reaction_add(payload):
                 )
     except Exception as e:
         print(f"❌ リアクション処理エラー: {e}")
+    finally:
+        pass
 
 # ランキングコマンド
 @bot.command(name="ランキング")
