@@ -2,14 +2,17 @@
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 import os
 from models import Base, Transaction
 
 # Railwayの環境変数を読み込む、なければローカルのSQLiteを使う
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database.db")
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_async_engine(DATABASE_URL)
+SessionLocal = sessionmaker(
+    engine, class_=AsyncSession, expire_on_commit=False
+)
 
 def init_db():
     """

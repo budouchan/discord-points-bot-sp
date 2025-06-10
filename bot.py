@@ -1,14 +1,16 @@
 import sys
 import os
+sys.path.insert(0, "/app")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import os
 import asyncio
 from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import AsyncSession
 from database import SessionLocal, init_db
 from sqlalchemy import Column, Integer, BigInteger, String, DateTime, select
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
@@ -22,51 +24,6 @@ class Transaction(Base):
     emoji_id = Column(String)
     transaction_type = Column(String, default='react')
     effective_date = Column(DateTime, default=datetime.utcnow)
-    
-    def __repr__(self):
-        return f"<Transaction(recipient={self.recipient_id}, points={self.points_awarded}, date={self.effective_date})>"
-
-intents = discord.Intents.default()
-intents.message_content = True
-intents.reactions = True
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
-intents = discord.Intents.default()
-intents.message_content = True
-intents.reactions = True
-bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
-
-# データベース設定はdatabase.pyに移動
-# DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/database.db")
-# engine = create_engine(DATABASE_URL)
-# SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-# Base = declarative_base()
-
-# データベース初期化関数はdatabase.pyに移動
-# async def init_db():
-#     try:
-#         print("🚀 データベース初期化開始")
-#         
-#         # テーブルの作成
-#         async with engine.begin() as conn:
-#             await conn.run_sync(Base.metadata.drop_all)
-#             await conn.run_sync(Base.metadata.create_all)
-#         
-#         # テーブルの存在確認
-#         async with engine.connect() as conn:
-#             result = await conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'"))
-#             if not result.fetchone():
-#                 raise Exception("transactionsテーブルが作成されませんでした")
-#             
-#             # テーブルのカラムを確認
-#             result = await conn.execute(text("PRAGMA table_info(transactions)"))
-#             columns = [row[1] for row in result.fetchall()]
-#             print(f"✅ transactionsテーブルのカラム: {columns}")
-#             
-#         print("✅ データベース初期化完了")
-#         
-#     except Exception as e:
-#         print(f"❌ データベース初期化エラー: {e}")
-#         raise
 
 # 環境変数読み込みとBot設定
 load_dotenv()
@@ -84,12 +41,16 @@ EMOJI_POINTS = {
     '<:budouchan3:1379713977000394854>': 3,     # ブドウちゃん3
 }
 
-# データベースセッションの取得（database.pyのSessionLocalを使用）
-def get_db():
-    return SessionLocal()
+# データベースセッションの取得（修正版）
+async def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        await db.close()
 
-# ポイント付与処理
-async def award_points(db: AsyncSession, recipient_id, giver_id, emoji_id, points):
+# ポイント付与処理（修正版）
+def award_points(db, recipient_id, giver_id, emoji_id, points):
     try:
         transaction = Transaction(
             recipient_id=recipient_id,
@@ -98,15 +59,15 @@ async def award_points(db: AsyncSession, recipient_id, giver_id, emoji_id, point
             emoji_id=emoji_id
         )
         db.add(transaction)
-        await db.commit()
+        db.commit()
         return True
     except Exception as e:
-        await db.rollback()
+        db.rollback()
         print(f"❌ ポイント付与エラー: {e}")
         return False
 
-# ポイント集計処理
-async def calculate_points(db: AsyncSession, user_id=None, month=None):
+# ポイント集計処理（修正版）
+def calculate_points(db, user_id=None, month=None):
     try:
         query = select(Transaction.recipient_id, Transaction.points_awarded)
         
@@ -114,14 +75,16 @@ async def calculate_points(db: AsyncSession, user_id=None, month=None):
             query = query.filter(Transaction.recipient_id == user_id)
         
         if month:
-            year, month = map(int, month.split('-'))
-            first_day = datetime(year, month, 1)
-            last_day = datetime(year, month, 1).replace(day=28) + timedelta(days=4)
-            last_day = last_day - timedelta(days=last_day.day)
-            query = query.filter(Transaction.effective_date >= first_day)
-            query = query.filter(Transaction.effective_date <= last_day)
+            # month が文字列の場合のみ split を実行
+            if isinstance(month, str):
+                year, month_num = map(int, month.split('-'))
+                first_day = datetime(year, month_num, 1)
+                last_day = datetime(year, month_num, 1).replace(day=28) + timedelta(days=4)
+                last_day = last_day - timedelta(days=last_day.day)
+                query = query.filter(Transaction.effective_date >= first_day)
+                query = query.filter(Transaction.effective_date <= last_day)
         
-        results = await db.execute(query)
+        results = db.execute(query)
         results = results.all()
         
         points_dict = {}
@@ -134,7 +97,7 @@ async def calculate_points(db: AsyncSession, user_id=None, month=None):
         return {}
 
 # ランキングメッセージ作成
-async def format_ranking_message(points_dict, month=None, guild=None):
+def format_ranking_message(points_dict, month=None, guild=None):
     try:
         ranking = sorted(points_dict.items(), key=lambda x: x[1], reverse=True)
         
@@ -152,7 +115,7 @@ async def format_ranking_message(points_dict, month=None, guild=None):
         print(f"❌ ランキングメッセージ作成エラー: {e}")
         return "❌ ランキングの作成に失敗しました"
 
-# リアクション追加イベント
+# リアクション追加イベント（修正版）
 @bot.event
 async def on_raw_reaction_add(payload):
     try:
@@ -160,8 +123,9 @@ async def on_raw_reaction_add(payload):
         points = EMOJI_POINTS.get(emoji_str)
         
         if points:
-            async with get_db() as db:
-                await award_points(
+            db = get_db()
+            try:
+                award_points(
                     db,
                     recipient_id=payload.message_id,
                     giver_id=payload.user_id,
@@ -175,15 +139,13 @@ async def on_raw_reaction_add(payload):
 @bot.command(name="ランキング")
 async def ranking(ctx):
     try:
-        db = get_db()
-        points_dict = await calculate_points(db)
-        message = await format_ranking_message(points_dict, guild=ctx.guild)
-        await ctx.send(message)
+        async with get_db() as db:
+            points_dict = await calculate_points(db)
+            message = await format_ranking_message(points_dict, guild=ctx.guild)
+            await ctx.send(message)
     except Exception as e:
         print(f"❌ ランキングコマンドエラー: {e}")
         await ctx.send("❌ ランキングの表示に失敗しました")
-    finally:
-        db.close()
 
 # 月間ランキングコマンド
 @bot.command(name="月間ランキング")
@@ -191,34 +153,30 @@ async def monthly_ranking(ctx, month: str = None):
     try:
         if month:
             try:
-                year, month = map(int, month.split('-'))
+                year, month_num = map(int, month.split('-'))
             except:
                 await ctx.send("⚠️ フォーマット: YYYY-MM")
                 return
         
-        db = get_db()
-        points_dict = await calculate_points(db, month=month)
-        message = await format_ranking_message(points_dict, month=month, guild=ctx.guild)
-        await ctx.send(message)
+        async with get_db() as db:
+            points_dict = await calculate_points(db, month=month)
+            message = await format_ranking_message(points_dict, month=month, guild=ctx.guild)
+            await ctx.send(message)
     except Exception as e:
         print(f"❌ 月間ランキングコマンドエラー: {e}")
         await ctx.send("❌ 月間ランキングの表示に失敗しました")
-    finally:
-        db.close()
 
 # ポイント表示コマンド
 @bot.command(name="ポイント")
 async def show_points(ctx):
     try:
-        db = get_db()
-        points_dict = await calculate_points(db, user_id=ctx.author.id)
-        total_points = points_dict.get(ctx.author.id, 0)
-        await ctx.send(f"📊 {ctx.author.display_name} のポイント: {total_points}pt")
+        async with get_db() as db:
+            points_dict = await calculate_points(db, user_id=ctx.author.id)
+            total_points = points_dict.get(ctx.author.id, 0)
+            await ctx.send(f"📊 {ctx.author.display_name} のポイント: {total_points}pt")
     except Exception as e:
         print(f"❌ ポイント表示コマンドエラー: {e}")
         await ctx.send("❌ ポイントの表示に失敗しました")
-    finally:
-        db.close()
 
 # デバッグ用のエラーハンドリング
 @bot.event
@@ -229,7 +187,7 @@ async def on_command_error(ctx, error):
 # データベース初期化とBot起動
 if __name__ == "__main__":
     try:
-        # データベース初期化
+        # データベース初期化（同期関数なのでasyncio.runは不要）
         init_db()
         
         # Bot起動
