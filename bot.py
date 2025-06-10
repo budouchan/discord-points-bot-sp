@@ -50,7 +50,7 @@ async def get_db():
         await db.close()
 
 # ポイント付与処理（修正版）
-async def award_points(db: AsyncSession, recipient_id, giver_id, emoji_id, points):
+def award_points(db, recipient_id, giver_id, emoji_id, points):
     try:
         transaction = Transaction(
             recipient_id=recipient_id,
@@ -60,10 +60,10 @@ async def award_points(db: AsyncSession, recipient_id, giver_id, emoji_id, point
             transaction_type='react'
         )
         db.add(transaction)
-        await db.commit()
+        db.commit()
         return True
     except Exception as e:
-        await db.rollback()
+        db.rollback()
         print(f"❌ ポイント付与エラー: {e}")
         return False
 
@@ -118,20 +118,21 @@ def format_ranking_message(points_dict, month=None, guild=None):
 
 # リアクション追加イベント（修正版）
 @bot.event
-async def on_raw_reaction_add(payload):
+def on_raw_reaction_add(payload):
     try:
         emoji_str = str(payload.emoji)
         points = EMOJI_POINTS.get(emoji_str)
         
         if points:
-            async with get_db() as db:
-                await award_points(
-                    db,
-                    recipient_id=payload.message_id,
-                    giver_id=payload.user_id,
-                    emoji_id=str(payload.emoji),
-                    points=points
-                )
+            db = get_db()
+            award_points(
+                db,
+                recipient_id=payload.message_id,
+                giver_id=payload.user_id,
+                emoji_id=str(payload.emoji),
+                points=points
+            )
+            db.close()
     except Exception as e:
         print(f"❌ リアクション処理エラー: {e}")
     finally:
@@ -141,15 +142,15 @@ async def on_raw_reaction_add(payload):
 @bot.command(name="ランキング")
 async def ranking(ctx):
     try:
-        async with get_db() as db:
-            points_dict = await calculate_points(db)
-            message = await format_ranking_message(points_dict, guild=ctx.guild)
-            await ctx.send(message)
+        db = get_db()
+        points_dict = calculate_points(db)
+        message = format_ranking_message(points_dict, guild=ctx.guild)
+        await ctx.send(message)
     except Exception as e:
         print(f"❌ ランキングコマンドエラー: {e}")
         await ctx.send("❌ ランキングの表示に失敗しました")
     finally:
-        pass
+        db.close()
 
 # 月間ランキングコマンド
 @bot.command(name="月間ランキング")
@@ -157,15 +158,16 @@ async def monthly_ranking(ctx, month: str = None):
     try:
         if month:
             try:
-                year, month_num = map(int, month.split('-'))
+                year, month = map(int, month.split('-'))
             except ValueError:
                 await ctx.send("⚠️ フォーマット: YYYY-MM")
                 return
         
-        async with get_db() as db:
-            points_dict = await calculate_points(db, month=month)
-            message = await format_ranking_message(points_dict, month=month, guild=ctx.guild)
-            await ctx.send(message)
+        db = get_db()
+        points_dict = calculate_points(db, month=month)
+        message = format_ranking_message(points_dict, month=month, guild=ctx.guild)
+        await ctx.send(message)
+        db.close()
     except Exception as e:
         print(f"❌ 月間ランキングコマンドエラー: {e}")
         await ctx.send("❌ 月間ランキングの表示に失敗しました")
@@ -174,15 +176,15 @@ async def monthly_ranking(ctx, month: str = None):
 @bot.command(name="ポイント")
 async def show_points(ctx):
     try:
-        async with get_db() as db:
-            points_dict = await calculate_points(db, user_id=ctx.author.id)
-            total_points = points_dict.get(ctx.author.id, 0)
-            await ctx.send(f"📊 {ctx.author.display_name} のポイント: {total_points}pt")
+        db = get_db()
+        points_dict = calculate_points(db, user_id=ctx.author.id)
+        total_points = points_dict.get(ctx.author.id, 0)
+        await ctx.send(f"📊 {ctx.author.display_name} のポイント: {total_points}pt")
     except Exception as e:
         print(f"❌ ポイント表示コマンドエラー: {e}")
         await ctx.send("❌ ポイントの表示に失敗しました")
     finally:
-        pass
+        db.close()
 
 # デバッグ用のエラーハンドリング
 @bot.event
