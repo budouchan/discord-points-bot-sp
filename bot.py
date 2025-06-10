@@ -42,12 +42,8 @@ EMOJI_POINTS = {
 }
 
 # データベースセッションの取得（修正版）
-async def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        await db.close()
+def get_db():
+    return SessionLocal()
 
 # ポイント付与処理（修正版）
 def award_points(db, recipient_id, giver_id, emoji_id, points):
@@ -143,14 +139,15 @@ async def on_raw_reaction_add(payload):
 async def ranking(ctx):
     try:
         db = get_db()
-        points_dict = calculate_points(db)
-        message = format_ranking_message(points_dict, guild=ctx.guild)
-        await ctx.send(message)
+        try:
+            points_dict = calculate_points(db)
+            message = format_ranking_message(points_dict, guild=ctx.guild)
+            await ctx.send(message)
+        finally:
+            db.close()
     except Exception as e:
         print(f"❌ ランキングコマンドエラー: {e}")
         await ctx.send("❌ ランキングの表示に失敗しました")
-    finally:
-        db.close()
 
 # 月間ランキングコマンド
 @bot.command(name="月間ランキング")
@@ -164,10 +161,12 @@ async def monthly_ranking(ctx, month: str = None):
                 return
         
         db = get_db()
-        points_dict = calculate_points(db, month=month)
-        message = format_ranking_message(points_dict, month=month, guild=ctx.guild)
-        await ctx.send(message)
-        db.close()
+        try:
+            points_dict = calculate_points(db, month=month)
+            message = format_ranking_message(points_dict, month=month, guild=ctx.guild)
+            await ctx.send(message)
+        finally:
+            db.close()
     except Exception as e:
         print(f"❌ 月間ランキングコマンドエラー: {e}")
         await ctx.send("❌ 月間ランキングの表示に失敗しました")
@@ -177,14 +176,15 @@ async def monthly_ranking(ctx, month: str = None):
 async def show_points(ctx):
     try:
         db = get_db()
-        points_dict = calculate_points(db, user_id=ctx.author.id)
-        total_points = points_dict.get(ctx.author.id, 0)
-        await ctx.send(f"📊 {ctx.author.display_name} のポイント: {total_points}pt")
+        try:
+            points_dict = calculate_points(db, user_id=ctx.author.id)
+            total_points = points_dict.get(ctx.author.id, 0)
+            await ctx.send(f"📊 {ctx.author.display_name} のポイント: {total_points}pt")
+        finally:
+            db.close()
     except Exception as e:
         print(f"❌ ポイント表示コマンドエラー: {e}")
         await ctx.send("❌ ポイントの表示に失敗しました")
-    finally:
-        db.close()
 
 # デバッグ用のエラーハンドリング
 @bot.event
