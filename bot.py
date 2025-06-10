@@ -95,55 +95,32 @@ def calculate_points(db, user_id=None, month=None):
         return {}
 
 # ランキングメッセージ作成（修正版）
-def format_ranking_message(points_dict, month=None, guild=None):
-    try:
-        ranking = sorted(points_dict.items(), key=lambda x: x[1], reverse=True)
-        
-        if not ranking:
-            return "📊 ランキングデータがありません。"
-        
-        message = f"📊 {guild.name} {'月間' if month else '総合'}ランキング\n"
-        
-        print(f"🔍 ランキング処理開始: {len(ranking)}件のデータ")
-        
-        for i, (user_id, points) in enumerate(ranking[:10]):
-            try:
-                print(f"🔍 処理中: user_id={user_id}, points={points}")
-                
-                # user_idを整数に変換
-                user_id_int = int(user_id)
-                
-                # 複数の方法でユーザー名を取得
-                user = guild.get_member(user_id_int)
-                if user:
-                    display_name = user.display_name
-                    print(f"🔍 guild.get_member成功: {display_name}")
-                else:
-                    # get_memberで取得できない場合はbot.get_userを試す
-                    user = bot.get_user(user_id_int)
-                    if user:
-                        display_name = user.display_name or user.name
-                        print(f"🔍 bot.get_user成功: {display_name}")
-                    else:
-                        display_name = f"ユーザー{user_id}"
-                        print(f"🔍 ユーザー名取得失敗、IDで表示: {display_name}")
-                
-                line = f"{i + 1}. {display_name} {points}pt\n"
-                message += line
-                print(f"🔍 ランキング行追加: {line.strip()}")
-                
-            except Exception as e:
-                print(f"❌ ユーザー処理エラー: user_id={user_id}, error={e}")
-                message += f"{i + 1}. ユーザー{user_id} {points}pt\n"
-        
-        print(f"📋 最終メッセージ: {message}")
-        return message
-        
-    except Exception as e:
-        print(f"❌ ランキングメッセージ作成エラー: {e}")
-        import traceback
-        traceback.print_exc()
-        return "❌ ランキングの作成に失敗しました"
+async def format_ranking_message(points_dict, title, guild):
+    ranking = sorted(points_dict.items(), key=lambda x: x[1], reverse=True)
+    if not ranking:
+        return f"📊 {title}\nランキングデータがありません。"
+
+    message = f"📊 {title}\n"
+    print(f"🔍 ランキング処理開始: {len(ranking)}件")
+
+    for i, (user_id, points) in enumerate(ranking[:10]):
+        display_name = f"ユーザーID: {user_id}"
+        try:
+            user_id_int = int(user_id)
+            # fetch_memberでサーバーから強制的にユーザー情報を取得
+            user = await guild.fetch_member(user_id_int)
+            display_name = user.display_name
+            print(f"✅ fetch_member成功: {display_name}")
+        except discord.NotFound:
+            print(f"⚠️ ユーザーがサーバーにいません: {user_id}")
+            display_name = f"脱退したユーザー"
+        except Exception as e:
+            print(f"❌ ユーザー情報取得エラー: user_id={user_id}, error={e}")
+
+        message += f"{i + 1}. {display_name} {points}pt\n"
+
+    print(f"📋 最終メッセージ: {message.strip()}")
+    return message
 
 # リアクション削除イベント（新規追加）
 @bot.event
@@ -246,30 +223,40 @@ async def ranking(ctx):
         finally:
             db.close()
     except Exception as e:
-        print(f"❌ ランキングコマンドエラー: {e}")
-        await ctx.send("❌ ランキングの表示に失敗しました")
+        print(f"❌ 総合ランキングエラー: {e}")
+        await ctx.send("❌ ランキングの作成に失敗しました")
+        
+    finally:
+        db.close()
 
 # 月間ランキングコマンド（修正版）
-@bot.command(name="月間ランキング")
+@bot.command(name='月間ランキング')
 async def monthly_ranking(ctx, month: str = None):
+    """月間ランキングを表示します。"""
     try:
-        if month:
-            try:
-                year, month_num = map(int, month.split('-'))
-            except:
-                await ctx.send("⚠️ フォーマット: YYYY-MM")
-                return
-        
+        # データベースからポイントを取得
         db = get_db()
-        try:
-            points_dict = calculate_points(db, month=month)
-            message = format_ranking_message(points_dict, month=month, guild=ctx.guild)
-            await ctx.send(message)
-        finally:
-            db.close()
+        points = calculate_points(db, month=month)
+        
+        if not points:
+            await ctx.send("📊 ランキングデータがありません。")
+            return
+            
+        # ランキングメッセージを作成
+        title = f"{ctx.guild.name} 月間ランキング"
+        if month:
+            title += f" ({month})"
+            
+        # 非同期関数を呼び出す
+        message = await format_ranking_message(points, title, ctx.guild)
+        await ctx.send(message)
+        
     except Exception as e:
-        print(f"❌ 月間ランキングコマンドエラー: {e}")
-        await ctx.send("❌ 月間ランキングの表示に失敗しました")
+        print(f"❌ 月間ランキングエラー: {e}")
+        await ctx.send("❌ ランキングの作成に失敗しました")
+        
+    finally:
+        db.close()
 
 # ポイント表示コマンド（修正版）
 @bot.command(name="ポイント")
