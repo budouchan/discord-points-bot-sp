@@ -118,7 +118,7 @@ def format_ranking_message(points_dict, month=None, guild=None):
 
 # リアクション追加イベント（修正版）
 @bot.event
-def on_raw_reaction_add(payload):
+async def on_raw_reaction_add(payload):
     try:
         emoji_str = str(payload.emoji)
         points = EMOJI_POINTS.get(emoji_str)
