@@ -103,15 +103,46 @@ def format_ranking_message(points_dict, month=None, guild=None):
             return "📊 ランキングデータがありません。"
         
         message = f"📊 {guild.name} {'月間' if month else '総合'}ランキング\n"
-        for i, (user_id, points) in enumerate(ranking[:10]):
-            user = guild.get_member(user_id)
-            if user:
-                message += f"{i + 1}. {user.display_name} {points}pt\n"
         
-        print(f"📋 ランキングメッセージ: {message}")
+        print(f"🔍 ランキング処理開始: {len(ranking)}件のデータ")
+        
+        for i, (user_id, points) in enumerate(ranking[:10]):
+            try:
+                print(f"🔍 処理中: user_id={user_id}, points={points}")
+                
+                # user_idを整数に変換
+                user_id_int = int(user_id)
+                
+                # 複数の方法でユーザー名を取得
+                user = guild.get_member(user_id_int)
+                if user:
+                    display_name = user.display_name
+                    print(f"🔍 guild.get_member成功: {display_name}")
+                else:
+                    # get_memberで取得できない場合はbot.get_userを試す
+                    user = bot.get_user(user_id_int)
+                    if user:
+                        display_name = user.display_name or user.name
+                        print(f"🔍 bot.get_user成功: {display_name}")
+                    else:
+                        display_name = f"ユーザー{user_id}"
+                        print(f"🔍 ユーザー名取得失敗、IDで表示: {display_name}")
+                
+                line = f"{i + 1}. {display_name} {points}pt\n"
+                message += line
+                print(f"🔍 ランキング行追加: {line.strip()}")
+                
+            except Exception as e:
+                print(f"❌ ユーザー処理エラー: user_id={user_id}, error={e}")
+                message += f"{i + 1}. ユーザー{user_id} {points}pt\n"
+        
+        print(f"📋 最終メッセージ: {message}")
         return message
+        
     except Exception as e:
         print(f"❌ ランキングメッセージ作成エラー: {e}")
+        import traceback
+        traceback.print_exc()
         return "❌ ランキングの作成に失敗しました"
 
 # リアクション削除イベント（新規追加）
