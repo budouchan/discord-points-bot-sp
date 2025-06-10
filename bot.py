@@ -2,20 +2,16 @@ import sys
 import os
 sys.path.insert(0, "/app")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 import os
-from datetime import datetime
+import asyncio
+from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import SessionLocal, init_db
 from models import Transaction
-
-# 環境変数読み込みとBot設定
-load_dotenv()
-intents = discord.Intents.default()
-intents.message_content = True
+from sqlalchemy import select
 intents.reactions = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
