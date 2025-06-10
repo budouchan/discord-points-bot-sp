@@ -217,12 +217,20 @@ async def ranking(ctx):
         db = get_db()
         try:
             points_dict = calculate_points(db)
-            message = format_ranking_message(points_dict, guild=ctx.guild)
-            await ctx.send(message)
+            ranking_body = await format_ranking_message(points_dict, ctx.guild)
+            
+            embed = discord.Embed(
+                title=f"📊 {ctx.guild.name} 総合ランキング",
+                description=ranking_body,
+                color=discord.Color.purple()  # Botのアイコンに合わせた色
+            )
+            await ctx.send(embed=embed)
         finally:
             db.close()
     except Exception as e:
         print(f"❌ 総合ランキングエラー: {e}")
+        import traceback
+        traceback.print_exc()
         await ctx.send("❌ ランキングの作成に失敗しました")
 
 # 月間ランキングコマンド（修正版）
