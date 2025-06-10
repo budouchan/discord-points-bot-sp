@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import SessionLocal, init_db
 from sqlalchemy import Column, Integer, BigInteger, String, DateTime, select
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
