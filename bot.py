@@ -161,41 +161,45 @@ async def on_raw_reaction_remove(payload):
 @bot.event
 async def on_raw_reaction_add(payload):
     try:
-        # 自分のリアクションは無視
+        # Botの反応は無視
         if payload.user_id == bot.user.id:
             return
             
         # メッセージ作成者を取得
         channel = bot.get_channel(payload.channel_id)
-        if not channel:
-            return
-            
         message = await channel.fetch_message(payload.message_id)
         
-        # 自分のメッセージへのリアクションは無視
-        if message.author.id == payload.user_id:
-            return
-            
         emoji_str = str(payload.emoji)
         points = EMOJI_POINTS.get(emoji_str)
         
-        if points:
+        print(f"🎉 リアクション検出: {emoji_str}")
+        
+        if points and message.author.id != payload.user_id:  # 自分への反応を除外
             db = get_db()
             try:
-                success = award_points(
+                award_points(
                     db,
-                    recipient_id=message.author.id,  # メッセージ作成者にポイント付与
+                    recipient_id=message.author.id,
                     giver_id=payload.user_id,
                     emoji_id=str(payload.emoji),
                     points=points
                 )
-                if success:
-                    # ユーザー名を取得
-                    user = bot.get_user(message.author.id)
-                    user_name = user.display_name if user else "未知のユーザー"
-                    print(f"🎉 {user_name} が {points}pt 獲得！")
+                
+                # ユーザー名取得を複数の方法で試す
+                user = message.author  # メッセージ作成者から直接取得
+                user_name = user.display_name if user else "未知のユーザー"
+                
+                # デバッグログ追加
+                print(f"🔍 デバッグ: user={user}, user.display_name={user.display_name if user else 'None'}")
+                
+                print(f"✅ ポイント付与成功: {message.author.id} に {points}pt")
+                print(f"🎉 {user_name} が {points}pt 獲得！")
+                
+            except Exception as e:
+                print(f"❌ ポイント付与エラー: {e}")
             finally:
                 db.close()
+                
     except Exception as e:
         print(f"❌ リアクション処理エラー: {e}")
 
