@@ -267,7 +267,7 @@ async def monthly_ranking(ctx, month: str = None):
 
 # ポイント表示コマンド（修正版）
 @bot.command(name="ポイント")
-async def show_points(ctx):
+async def command_show_points(ctx):
     try:
         db = get_db()
         try:
