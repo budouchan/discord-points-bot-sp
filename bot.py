@@ -1,8 +1,5 @@
 import sys
 import os
-sys.path.insert(0, "/app")
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import os
 import asyncio
 from datetime import datetime, timedelta
 import discord
@@ -10,8 +7,29 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession
 from database import SessionLocal, init_db
-from models import Transaction
-from sqlalchemy import select
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, select
+from sqlalchemy.ext.declarative import declarative_base
+
+Base = declarative_base()
+
+class Transaction(Base):
+    __tablename__ = 'transactions'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_id = Column(BigInteger, nullable=False)
+    points_awarded = Column(Integer, nullable=False)
+    giver_id = Column(BigInteger)
+    emoji_id = Column(String)
+    transaction_type = Column(String, default='react')
+    effective_date = Column(DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f"<Transaction(recipient={self.recipient_id}, points={self.points_awarded}, date={self.effective_date})>"
+
+intents = discord.Intents.default()
+intents.message_content = True
+intents.reactions = True
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
