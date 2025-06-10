@@ -118,19 +118,26 @@ def format_ranking_message(points_dict, month=None, guild=None):
 @bot.event
 async def on_raw_reaction_add(payload):
     try:
+        # メッセージ作成者を取得
+        channel = bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        
         emoji_str = str(payload.emoji)
         points = EMOJI_POINTS.get(emoji_str)
         
-        if points:
+        if points and message.author.id != payload.user_id:  # 自分への反応を除外
             db = get_db()
-            award_points(
-                db,
-                recipient_id=payload.message_id,
-                giver_id=payload.user_id,
-                emoji_id=str(payload.emoji),
-                points=points
-            )
-            db.close()
+            try:
+                award_points(
+                    db,
+                    recipient_id=message.author.id,  # メッセージ作成者のIDを使用
+                    giver_id=payload.user_id,
+                    emoji_id=str(payload.emoji),
+                    points=points
+                )
+                db.close()
+            except Exception as e:
+                print(f"❌ ポイント付与エラー: {e}")
     except Exception as e:
         print(f"❌ リアクション処理エラー: {e}")
     finally:
