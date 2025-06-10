@@ -1,18 +1,15 @@
 # database.py
-
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 import os
 from models import Base, Transaction
 
 # Railwayの環境変数を読み込む、なければローカルのSQLiteを使う
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database.db")
 
-engine = create_async_engine(DATABASE_URL)
-SessionLocal = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
-)
+# 同期エンジンを使用（非同期を削除）
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     """
@@ -40,7 +37,6 @@ def init_db():
             result = conn.execute(text("PRAGMA table_info(transactions)"))
             columns = [row[1] for row in result.fetchall()] # row[1] is the column name
             print(f"✅ transactionsテーブルのカラム: {columns}")
-
         print("✅ データベース初期化完了")
         
     except Exception as e:
