@@ -113,9 +113,6 @@ def format_ranking_message(points_dict, month=None, guild=None):
     except Exception as e:
         print(f"❌ ランキングメッセージ作成エラー: {e}")
         return "❌ ランキングの作成に失敗しました"
-    except Exception as e:
-        print(f"❌ ランキングメッセージ作成エラー: {e}")
-        return "❌ ランキングの作成に失敗しました"
 
 # リアクション追加イベント（修正版）
 @bot.event
