@@ -146,6 +146,8 @@ async def ranking(ctx):
     except Exception as e:
         print(f"❌ ランキングコマンドエラー: {e}")
         await ctx.send("❌ ランキングの表示に失敗しました")
+    finally:
+        pass
 
 # 月間ランキングコマンド
 @bot.command(name="月間ランキング")
@@ -154,7 +156,7 @@ async def monthly_ranking(ctx, month: str = None):
         if month:
             try:
                 year, month_num = map(int, month.split('-'))
-            except:
+            except ValueError:
                 await ctx.send("⚠️ フォーマット: YYYY-MM")
                 return
         
@@ -177,6 +179,8 @@ async def show_points(ctx):
     except Exception as e:
         print(f"❌ ポイント表示コマンドエラー: {e}")
         await ctx.send("❌ ポイントの表示に失敗しました")
+    finally:
+        pass
 
 # デバッグ用のエラーハンドリング
 @bot.event
