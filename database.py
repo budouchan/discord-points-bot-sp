@@ -6,7 +6,7 @@ import os
 from models import Base, Transaction
 
 # Railwayの環境変数を読み込む、なければローカルのSQLiteを使う
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/database.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database.db")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
