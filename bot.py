@@ -12,6 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import SessionLocal, init_db
 from models import Transaction
 from sqlalchemy import select
+intents = discord.Intents.default()
+intents.message_content = True
 intents.reactions = True
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
