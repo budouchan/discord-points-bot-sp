@@ -60,14 +60,18 @@ def award_points(db, recipient_id, giver_id, emoji_id, points):
         return False
 
 # ポイント集計処理（修正版）
-def calculate_points(db, user_id=None, month=None):
+def calculate_points(db, user_id=None, month=None, year=None):
     try:
         query = select(Transaction.recipient_id, Transaction.points_awarded)
         
         if user_id:
             query = query.filter(Transaction.recipient_id == user_id)
         
-        if month:
+        if year:
+            first_day = datetime(year, 1, 1)
+            last_day = datetime(year, 12, 31, 23, 59, 59)
+            query = query.filter(Transaction.effective_date.between(first_day, last_day))
+        elif month:
             # month が文字列の場合のみ split を実行
             if isinstance(month, str):
                 year, month_num = map(int, month.split('-'))
@@ -282,13 +286,45 @@ async def on_command_error(ctx, error):
     print(f"❌ コマンドエラー: {error}")
     await ctx.send("⚠️ コマンドの実行中にエラーが発生しました")
 
+# 年間ランキングコマンド（新規追加）
+@bot.command(name='年間ランキング')
+async def yearly_ranking(ctx, year: int = None):
+    """年間ランキングを表示します。年が指定されない場合は現在の年になります。"""
+    try:
+        if year is None:
+            year = datetime.now().year
+
+        db = get_db()
+        points_dict = calculate_points(db, year=year)
+        db.close()
+
+        ranking_body = await format_ranking_message(points_dict, ctx.guild)
+        
+        # 年間MVP用にEmbedの色を金色にしてみます
+        embed = discord.Embed(
+            title=f"🏆 {ctx.guild.name} 年間ランキング ({year}年)",
+            description=ranking_body,
+            color=discord.Color.gold()
+        )
+        
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        print(f"❌ 年間ランキングエラー: {e}")
+        import traceback
+        traceback.print_exc()
+        await ctx.send("❌ ランキングの作成に失敗しました")
+
 # データベース初期化とBot起動
 if __name__ == "__main__":
     try:
         # データベース初期化（同期関数なのでasyncio.runは不要）
         init_db()
+        print("✅ データベース初期化完了")
         
-        # Bot起動
+        # Botの起動
         bot.run(os.getenv("DISCORD_BOT_TOKEN"))
     except Exception as e:
         print(f"❌ Bot起動エラー: {e}")
+        import traceback
+        traceback.print_exc()
