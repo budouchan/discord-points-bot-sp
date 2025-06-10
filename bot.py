@@ -52,11 +52,11 @@ def award_points(db, recipient_id, giver_id, emoji_id, points):
             recipient_id=recipient_id,
             points_awarded=points,
             giver_id=giver_id,
-            emoji_id=emoji_id,
-            transaction_type='react'
+            emoji_id=emoji_id
         )
         db.add(transaction)
         db.commit()
+        print(f"✅ ポイント付与成功: {recipient_id} に {points}pt")
         return True
     except Exception as e:
         db.rollback()
@@ -88,12 +88,13 @@ def calculate_points(db, user_id=None, month=None):
         for recipient_id, points in results:
             points_dict[recipient_id] = points_dict.get(recipient_id, 0) + points
         
+        print(f"📊 集計結果: {points_dict}")
         return points_dict
     except Exception as e:
         print(f"❌ ポイント集計エラー: {e}")
         return {}
 
-# ランキングメッセージ作成
+# ランキングメッセージ作成（修正版）
 def format_ranking_message(points_dict, month=None, guild=None):
     try:
         ranking = sorted(points_dict.items(), key=lambda x: x[1], reverse=True)
@@ -105,10 +106,12 @@ def format_ranking_message(points_dict, month=None, guild=None):
         for i, (user_id, points) in enumerate(ranking[:10]):
             user = guild.get_member(user_id)
             if user:
-                message += f"{i + 1}. {user.display_name} {points}pt\n"
+                display_name = user.display_name
             else:
-                message += f"{i + 1}. 未知のユーザー {points}pt\n"
+                display_name = f"ユーザー{user_id}"
+            message += f"{i + 1}. {display_name} {points}pt\n"
         
+        print(f"📋 ランキングメッセージ: {message}")
         return message
     except Exception as e:
         print(f"❌ ランキングメッセージ作成エラー: {e}")
@@ -118,32 +121,42 @@ def format_ranking_message(points_dict, month=None, guild=None):
 @bot.event
 async def on_raw_reaction_add(payload):
     try:
+        # 自分のリアクションは無視
+        if payload.user_id == bot.user.id:
+            return
+            
         # メッセージ作成者を取得
         channel = bot.get_channel(payload.channel_id)
+        if not channel:
+            return
+            
         message = await channel.fetch_message(payload.message_id)
         
+        # 自分のメッセージへのリアクションは無視
+        if message.author.id == payload.user_id:
+            return
+            
         emoji_str = str(payload.emoji)
         points = EMOJI_POINTS.get(emoji_str)
         
-        if points and message.author.id != payload.user_id:  # 自分への反応を除外
+        if points:
             db = get_db()
             try:
-                award_points(
+                success = award_points(
                     db,
-                    recipient_id=message.author.id,  # メッセージ作成者のIDを使用
+                    recipient_id=message.author.id,  # メッセージ作成者にポイント付与
                     giver_id=payload.user_id,
                     emoji_id=str(payload.emoji),
                     points=points
                 )
+                if success:
+                    print(f"🎉 {message.author.display_name} が {points}pt 獲得！")
+            finally:
                 db.close()
-            except Exception as e:
-                print(f"❌ ポイント付与エラー: {e}")
     except Exception as e:
         print(f"❌ リアクション処理エラー: {e}")
-    finally:
-        pass
 
-# ランキングコマンド
+# ランキングコマンド（修正版）
 @bot.command(name="ランキング")
 async def ranking(ctx):
     try:
@@ -158,14 +171,14 @@ async def ranking(ctx):
         print(f"❌ ランキングコマンドエラー: {e}")
         await ctx.send("❌ ランキングの表示に失敗しました")
 
-# 月間ランキングコマンド
+# 月間ランキングコマンド（修正版）
 @bot.command(name="月間ランキング")
 async def monthly_ranking(ctx, month: str = None):
     try:
         if month:
             try:
-                year, month = map(int, month.split('-'))
-            except ValueError:
+                year, month_num = map(int, month.split('-'))
+            except:
                 await ctx.send("⚠️ フォーマット: YYYY-MM")
                 return
         
@@ -180,7 +193,7 @@ async def monthly_ranking(ctx, month: str = None):
         print(f"❌ 月間ランキングコマンドエラー: {e}")
         await ctx.send("❌ 月間ランキングの表示に失敗しました")
 
-# ポイント表示コマンド
+# ポイント表示コマンド（修正版）
 @bot.command(name="ポイント")
 async def show_points(ctx):
     try:
