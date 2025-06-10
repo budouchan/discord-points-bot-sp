@@ -106,6 +106,8 @@ def format_ranking_message(points_dict, month=None, guild=None):
             user = guild.get_member(user_id)
             if user:
                 message += f"{i + 1}. {user.display_name} {points}pt\n"
+            else:
+                message += f"{i + 1}. 未知のユーザー {points}pt\n"
         
         return message
     except Exception as e:
