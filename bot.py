@@ -210,7 +210,7 @@ async def on_command_error(ctx, error):
 if __name__ == "__main__":
     try:
         # データベース初期化
-        asyncio.run(init_db())
+        init_db()
         
         # Bot起動
         bot.run(os.getenv("DISCORD_BOT_TOKEN"))
