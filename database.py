@@ -10,7 +10,6 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////data/database.db")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
 
 def init_db():
     """
