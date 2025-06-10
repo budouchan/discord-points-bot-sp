@@ -106,13 +106,13 @@ def format_ranking_message(points_dict, month=None, guild=None):
         for i, (user_id, points) in enumerate(ranking[:10]):
             user = guild.get_member(user_id)
             if user:
-                display_name = user.display_name
-            else:
-                display_name = f"ユーザー{user_id}"
-            message += f"{i + 1}. {display_name} {points}pt\n"
+                message += f"{i + 1}. {user.display_name} {points}pt\n"
         
         print(f"📋 ランキングメッセージ: {message}")
         return message
+    except Exception as e:
+        print(f"❌ ランキングメッセージ作成エラー: {e}")
+        return "❌ ランキングの作成に失敗しました"
     except Exception as e:
         print(f"❌ ランキングメッセージ作成エラー: {e}")
         return "❌ ランキングの作成に失敗しました"
