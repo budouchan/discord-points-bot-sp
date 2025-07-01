@@ -1,517 +1,330 @@
 import os
-from datetime import datetime, timezone
+import asyncio
+from datetime import datetime, timedelta
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from dotenv import load_dotenv
-
 from database import SessionLocal, init_db
-from models import Transaction
-from utils import TARGET_GUILD, AUTHORIZED, EMOJI_POINTS, format_ranking_message, SERVER_NAMES, format_status_ranking
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, select
+from sqlalchemy.ext.declarative import declarative_base
 
-# ─── 準備 ─────────────────────────────────────
+Base = declarative_base()
+
+class Transaction(Base):
+    __tablename__ = 'transactions'
+    
+    id = Column(Integer, primary_key=True, index=True)
+    recipient_id = Column(BigInteger, nullable=False)
+    points_awarded = Column(Integer, nullable=False)
+    giver_id = Column(BigInteger)
+    emoji_id = Column(String)
+    transaction_type = Column(String, default='react')
+    effective_date = Column(DateTime, default=datetime.utcnow)
+
+# 環境変数読み込みとBot設定
 load_dotenv()
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
-
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=None)
 
-RATE_LIMIT_SECONDS = 30
-
-# 環境変数からチャンネルIDを取得
-RANKING_CHANNEL_ID_GOJAKAI = int(os.getenv('RANKING_CHANNEL_ID_GOJAKAI', 0))
-RANKING_CHANNEL_ID_HIMETANE = int(os.getenv('RANKING_CHANNEL_ID_HIMETANE', 0))
-UPDATE_INTERVAL_MINUTES = int(os.getenv('UPDATE_INTERVAL_MINUTES', 30))
-
-# ランキングメッセージのキャッシュ
-ranking_messages = {
-    'gojaki': None,
-    'himetane': None
+# カスタム絵文字ポイント設定
+EMOJI_POINTS = {
+    '<:glucose_man:1360489607010975975>': 1,    # グルコースマン
+    '<:saoringo:1378640284358938685>': 1,       # さおりんご
+    '<:budouchan1:1379713964409225358>': 1,     # ブドウちゃん1
+    '<:budouchan2:1379713967676723300>': 2,     # ブドウちゃん2
+    '<:budouchan3:1379713977000394854>': 3,     # ブドウちゃん3
 }
 
-# ランキング更新タスク
-@tasks.loop(minutes=UPDATE_INTERVAL_MINUTES)
-async def update_rankings():
-    """
-    ランキングを更新する定期タスク
-    """
-    print(f"🔄 ランキング更新開始: {datetime.now().strftime('%H:%M')}")
-    
+# データベースセッションの取得（修正版）
+def get_db():
+    return SessionLocal()
+
+# ポイント付与処理（修正版）
+def award_points(db, recipient_id, giver_id, emoji_id, points):
     try:
-        # テスト用の固定ランキング
-        test_ranking = [
-            ("ゆず", 4),
-            ("モチモチ", 3),
-            ("よりとも", 1),
-            ("笑ちゃん", 1),
-            ("空席", 0),
-            ("空席", 0)
-        ]
-        
-        # デバッグ用：固定ランキングを表示
-        print("🔍 テスト用ランキング:", test_ranking)
-        
-        # データベースからランキングを取得（テスト用コメントアウト）
-        # all_rankings = []
-        # for guild in bot.guilds:
-        #     with SessionLocal() as db:
-        #         transactions = db.query(Transaction).filter(
-        #             Transaction.server_id == guild.id,
-        #             Transaction.created_at >= datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        #         ).all()
-        #         
-        #         points = {}
-        #         for tx in transactions:
-        #             user = guild.get_member(tx.user_id)
-        #             username = user.name if user else str(tx.user_id)
-        #             points[username] = points.get(username, 0) + tx.points
-        #         
-        #         all_rankings.extend(points.items())
-        # 
-        # combined_ranking = sorted(all_rankings, key=lambda x: x[1], reverse=True)[:6]
-        
-        # テスト用ランキングを使用
-        combined_ranking = test_ranking
-        
-        # Botステータスを更新
-        status_text = format_status_ranking(combined_ranking)
-        try:
-            await bot.change_presence(
-                activity=discord.Game(name=status_text)
-            )
-            print(f"✅ Botステータス更新: {status_text}")
-        except Exception as e:
-            print(f"❌ ステータス更新エラー: {str(e)}")
-        
-    except Exception as e:
-        print(f"❌ ランキング更新エラー: {str(e)}")
-    
-    # サーバーごとに処理
-    for server_id, channel_id in {
-        932399906189099098: RANKING_CHANNEL_ID_GOJAKAI,
-        992716525251330058: RANKING_CHANNEL_ID_HIMETANE
-    }.items():
-        
-        if not channel_id:
-            print(f"⚠️ {SERVER_NAMES[server_id]}: チャンネルIDが設定されていません")
-            continue
-            
-        try:
-            # チャンネルを取得
-            channel = bot.get_channel(channel_id)
-            if not channel:
-                print(f"⚠️ {SERVER_NAMES[server_id]}: チャンネルが見つかりません")
-                continue
-
-            # サーバーのランキングを取得
-            with SessionLocal() as db:
-                transactions = db.query(Transaction).filter(
-                    Transaction.server_id == server_id,
-                    Transaction.created_at >= datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-                ).all()
-                
-                # ユーザーごとのポイントを集計
-                points = {}
-                for tx in transactions:
-                    points[tx.user_id] = points.get(tx.user_id, 0) + tx.points
-                
-                # ランキング順にソート
-                rankings = sorted(points.items(), key=lambda x: x[1], reverse=True)[:6]
-
-            # メッセージをフォーマット
-            update_time = datetime.now().strftime('%H:%M')
-            message_content = await format_ranking_message(
-                'gojaki' if server_id == 932399906189099098 else 'himetane',
-                rankings,
-                update_time
-            )
-
-            # メッセージの更新
-            if ranking_messages[SERVER_NAMES[server_id]]:
-                try:
-                    await ranking_messages[SERVER_NAMES[server_id]].edit(content=message_content)
-                except Exception as e:
-                    print(f"⚠️ {SERVER_NAMES[server_id]}: メッセージ更新に失敗: {str(e)}")
-                    # 失敗した場合は新しいメッセージを作成
-                    message = await channel.send(message_content)
-                    ranking_messages[SERVER_NAMES[server_id]] = message
-            else:
-                # 初回は新しいメッセージを作成
-                message = await channel.send(message_content)
-                ranking_messages[SERVER_NAMES[server_id]] = message
-
-            print(f"✅ {SERVER_NAMES[server_id]}: ランキング更新完了")
-            
-        except Exception as e:
-            print(f"❌ {SERVER_NAMES[server_id]}: ランキング更新エラー: {str(e)}")
-
-    print(f"✅ ランキング更新完了: {datetime.now().strftime('%H:%M')}")
-
-# タスクの開始はon_ready内で行います
-
-# サーバー名マッピング
-SERVER_NAMES = {
-    992716525251330058: "ヒメタネ",
-    932399906189099098: "ごじゃ會"
-}
-
-# ─── 起動時 ───────────────────────────────────
-@bot.event
-async def on_ready():
-    init_db()
-    print(f"✅ Logged in as {bot.user}")
-    print("🤖 Bot is ready!")
-    
-    for guild in bot.guilds:
-        print(f"🏠 接続中のサーバー: {guild.name} (ID: {guild.id})")
-    
-    # ここで定期タスク開始
-    if not update_rankings.is_running():
-        update_rankings.start()
-        print("✅ ランキング自動更新開始")
-
-# ─── デバッグ用メッセージ受信ログ ─────────────
-@bot.event
-async def on_message(message):
-    if message.author.bot:
-        return
-    server_name = SERVER_NAMES.get(message.guild.id, message.guild.name)
-    print(f"🚥 受信: {message.content} ({server_name})")
-    await bot.process_commands(message)
-
-# ─── 取引ログ追加ヘルパ ───────────────────────
-def record_tx(**kwargs):
-    with SessionLocal() as db:
-        db.add(Transaction(**kwargs))
+        transaction = Transaction(
+            recipient_id=recipient_id,
+            points_awarded=points,
+            giver_id=giver_id,
+            emoji_id=emoji_id
+        )
+        db.add(transaction)
         db.commit()
+        print(f"✅ ポイント付与成功: {recipient_id} に {points}pt")
+        return True
+    except Exception as e:
+        db.rollback()
+        print(f"❌ ポイント付与エラー: {e}")
+        return False
 
-# ─── リアクション追加（サーバー別対応）─────────
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    # 権限チェックをサーバー別に分ける
-    if payload.guild_id == TARGET_GUILD:
-        # ヒメタネ: 元の権限者のみ
-        if payload.user_id not in AUTHORIZED:
-            return
-    elif payload.guild_id == 932399906189099098:
-        # ごじゃ會: 別の権限者（必要に応じて追加）
-        # とりあえず同じ権限者を使用
-        if payload.user_id not in AUTHORIZED:
-            return
-    else:
-        # その他のサーバーは無視
-        return
-
-    emoji_str = str(payload.emoji)
-    if emoji_str not in EMOJI_POINTS:
-        return
-
-    # メッセージの投稿者IDと投稿日時を取得
+# ポイント集計処理（修正版）
+def calculate_points(db, user_id=None, month=None, year=None):
     try:
+        query = select(Transaction.recipient_id, Transaction.points_awarded)
+        
+        if user_id:
+            query = query.filter(Transaction.recipient_id == user_id)
+        
+        if year:
+            first_day = datetime(year, 1, 1)
+            last_day = datetime(year, 12, 31, 23, 59, 59)
+            query = query.filter(Transaction.effective_date.between(first_day, last_day))
+        elif month:
+            # month が文字列の場合のみ split を実行
+            if isinstance(month, str):
+                year, month_num = map(int, month.split('-'))
+                first_day = datetime(year, month_num, 1)
+                last_day = datetime(year, month_num, 1).replace(day=28) + timedelta(days=4)
+                last_day = last_day - timedelta(days=last_day.day)
+                query = query.filter(Transaction.effective_date >= first_day)
+                query = query.filter(Transaction.effective_date <= last_day)
+        
+        results = db.execute(query)
+        results = results.all()
+        
+        points_dict = {}
+        for recipient_id, points in results:
+            points_dict[recipient_id] = points_dict.get(recipient_id, 0) + points
+        
+        print(f"📊 集計結果: {points_dict}")
+        return points_dict
+    except Exception as e:
+        print(f"❌ ポイント集計エラー: {e}")
+        return {}
+
+# ランキングメッセージ作成（修正版）
+async def format_ranking_message(points_dict, guild):
+    if not points_dict:
+        return "ランキングデータがありません。"
+    
+    ranking = sorted(points_dict.items(), key=lambda x: x[1], reverse=True)
+    
+    message_body = ""
+    print(f"🔍 ランキングリスト作成開始: {len(ranking)}件")
+
+    for i, (user_id, points) in enumerate(ranking[:10]):
+        display_name = f"ユーザーID: {user_id}"
+        try:
+            user = await guild.fetch_member(int(user_id))
+            display_name = user.display_name
+            print(f"✅ fetch_member成功: {display_name}")
+        except discord.NotFound:
+            print(f"⚠️ ユーザーがサーバーにいません: {user_id}")
+            display_name = f"脱退したユーザー"
+        except Exception as e:
+            print(f"❌ ユーザー情報取得エラー: user_id={user_id}, error={e}")
+
+        message_body += f"{i + 1}. {display_name} {points}pt\n"
+
+    print(f"📋 最終リスト: {message_body.strip()}")
+    return message_body
+
+# リアクション削除イベント（新規追加）
+@bot.event
+async def on_raw_reaction_remove(payload):
+    """リアクション削除時にポイントを減算"""
+    try:
+        # Botの反応は無視
+        if payload.user_id == bot.user.id:
+            return
+            
+        # メッセージを取得
+        channel = bot.get_channel(payload.channel_id)
+        if not channel:
+            return
+            
+        message = await channel.fetch_message(payload.message_id)
+        
+        # メッセージ作成者とリアクションしたユーザーが同じ場合は無視
+        if message.author.id == payload.user_id:
+            return
+            
+        # ポイントの計算
+        emoji_str = str(payload.emoji)
+        points = EMOJI_POINTS.get(emoji_str)
+        
+        if points:
+            db = get_db()
+            try:
+                # ポイントを減算
+                transaction = Transaction(
+                    recipient_id=message.author.id,
+                    points_awarded=-points,  # マイナス値でポイントを減算
+                    giver_id=payload.user_id,
+                    emoji_id=str(payload.emoji),
+                    transaction_type='react_remove'
+                )
+                db.add(transaction)
+                db.commit()
+                print(f"✅ ポイント減算成功: {message.author.display_name} から {-points}pt")
+            finally:
+                db.close()
+    except Exception as e:
+        print(f"❌ リアクション削除処理エラー: {e}")
+
+# リアクション追加イベント（修正版）
+@bot.event
+async def on_raw_reaction_add(payload):
+    try:
+        # Botの反応は無視
+        if payload.user_id == bot.user.id:
+            return
+            
+        # メッセージ作成者を取得
         channel = bot.get_channel(payload.channel_id)
         message = await channel.fetch_message(payload.message_id)
-        recipient_id = str(message.author.id)
-        message_date = message.created_at
         
-        # 自己リアクションチェック
-        if payload.user_id == message.author.id:
-            server_name = SERVER_NAMES.get(payload.guild_id, "不明")
-            print(f"⚠️ 自己リアクションをスキップ: {emoji_str} ({server_name})")
-            return
-            
-    except Exception as e:
-        print(f"❌ メッセージ取得エラー: {e}")
-        return
-
-    # 重複防止チェック
-    with SessionLocal() as session:
-        existing = session.query(Transaction).filter_by(
-            message_id=str(payload.message_id),
-            giver_id=str(payload.user_id),
-            emoji_str=emoji_str,
-            action_type="add",
-            guild_id=str(payload.guild_id)  # ← サーバー別チェック
-        ).first()
+        emoji_str = str(payload.emoji)
+        points = EMOJI_POINTS.get(emoji_str)
         
-        if existing:
-            server_name = SERVER_NAMES.get(payload.guild_id, "不明")
-            print(f"⚠️ 重複スキップ: {emoji_str} by {payload.user_id} ({server_name})")
-            return
-
-    # ポイント付与
-    record_tx(
-        effective_date=message_date,
-        reaction_timestamp=datetime.now(timezone.utc),
-        message_id=str(payload.message_id),
-        channel_id=str(payload.channel_id),
-        guild_id=str(payload.guild_id),  # ← サーバーIDを保存
-        recipient_id=recipient_id,
-        giver_id=str(payload.user_id),
-        emoji_str=emoji_str,
-        points_awarded=EMOJI_POINTS[emoji_str],
-        action_type="add",
-    )
-    
-    # サーバー名付きログ
-    month_str = message_date.strftime("%Y-%m")
-    server_name = SERVER_NAMES.get(payload.guild_id, "不明")
-    print(f"✨ ポイント付与: {EMOJI_POINTS[emoji_str]}pt → {recipient_id} ({month_str}) [{server_name}]")
-
-# ─── リアクション削除（サーバー別対応） ─────────
-@bot.event
-async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-    # 権限チェック
-    if payload.guild_id == TARGET_GUILD:
-        if payload.user_id not in AUTHORIZED:
-            return
-    elif payload.guild_id == 932399906189099098:
-        if payload.user_id not in AUTHORIZED:
-            return
-    else:
-        return
-
-    emoji_str = str(payload.emoji)
-    if emoji_str not in EMOJI_POINTS:
-        return
-
-    with SessionLocal() as session:
-        tx = (
-            session.query(Transaction)
-            .filter_by(
-                message_id=str(payload.message_id),
-                giver_id=str(payload.user_id),
-                emoji_str=emoji_str,
-                action_type="add",
-                guild_id=str(payload.guild_id)  # ← サーバー別削除
-            )
-            .order_by(Transaction.id.desc())
-            .first()
-        )
-        if tx:
-            session.delete(tx)
-            session.commit()
-            server_name = SERVER_NAMES.get(payload.guild_id, "不明")
-            print(f"🗑️ ポイント削除: message_id={payload.message_id} [{server_name}]")
-
-# ─── !ポイント（サーバー別）────────────────────
-@bot.command()
-async def ポイント(ctx):
-    try:
-        with SessionLocal() as session:
-            rows = (
-                session.query(Transaction.points_awarded)
-                .filter_by(
-                    recipient_id=str(ctx.author.id),
-                    guild_id=str(ctx.guild.id)  # ← サーバー別集計
+        print(f"🎉 リアクション検出: {emoji_str}")
+        
+        if points and message.author.id != payload.user_id:  # 自分への反応を除外
+            db = get_db()
+            try:
+                award_points(
+                    db,
+                    recipient_id=message.author.id,
+                    giver_id=payload.user_id,
+                    emoji_id=str(payload.emoji),
+                    points=points
                 )
-                .all()
-            )
-        total = sum(r[0] for r in rows)
-        server_name = SERVER_NAMES.get(ctx.guild.id, ctx.guild.name)
-        await ctx.send(f"📊 {ctx.author.display_name}さんのポイント: {total}ポイント ({server_name})")
-
-    except Exception as e:
-        print("❌ ポイントコマンドエラー:", e)
-        await ctx.send("⚠️ ポイント取得中にエラーが発生しました。")
-
-# ─── !ランキング（サーバー別）───────────────────
-@bot.command(name="ランキング")
-async def _ranking(ctx):
-    try:
-        now = datetime.now(timezone.utc)
-        channel_key = f"{ctx.guild.id}_{ctx.channel.id}"  # サーバー+チャンネル別レート制限
-        last = last_ranking_time.get(channel_key)
-        if last and (now - last).total_seconds() < RATE_LIMIT_SECONDS:
-            remain = RATE_LIMIT_SECONDS - int((now - last).total_seconds())
-            await ctx.send(f"⏰ {remain} 秒後に再実行できます。")
-            return
-        last_ranking_time[channel_key] = now
-
-        with SessionLocal() as session:
-            rows = session.query(
-                Transaction.recipient_id,
-                Transaction.points_awarded
-            ).filter_by(guild_id=str(ctx.guild.id)).all()  # ← サーバー別集計
-
-        scores = {}
-        for uid, pt in rows:
-            scores[uid] = scores.get(uid, 0) + pt
-        scores = {k: v for k, v in scores.items() if v > 0}
-        if not scores:
-            await ctx.send("📊 まだ誰もポイントを獲得していません。")
-            return
-
-        top10 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:10]
-        server_name = SERVER_NAMES.get(ctx.guild.id, ctx.guild.name)
-        msg = f"```\n📊 {server_name} 総合ランキング\n\n"
-        for i, (uid, pt) in enumerate(top10, 1):
-            try:
-                user = await bot.fetch_user(int(uid))
-                name = user.display_name
-            except Exception:
-                name = "不明ユーザー"
-            msg += f"{i}. {name} {pt}pt\n"
-        msg += "```"
-        await ctx.send(msg)
-
-    except Exception as e:
-        print("❌ ランキングコマンドエラー:", e)
-        await ctx.send("⚠️ ランキング取得中にエラーが発生しました。")
-
-# ─── !月間ランキング（サーバー別）───────────────
-@bot.command(name="月間ランキング")
-async def _monthly_ranking(ctx, year_month: str = None):
-    """サーバー別メッセージ投稿月ベースの月間ランキング"""
-    try:
-        import calendar
-        
-        if year_month is None:
-            now = datetime.now(timezone.utc)
-            year_month = now.strftime("%Y-%m")
-        
-        # 特別な期間指定
-        if year_month == "過去":
-            end_date = datetime(2024, 1, 31, 23, 59, 59, tzinfo=timezone.utc)
-            period_name = "過去〜2024年1月31日"
-            
-            try:
-                session = SessionLocal()
-                result = session.query(
-                    Transaction.user_id,
-                    func.sum(Transaction.points).label('total_points')
-                ).filter(
-                    Transaction.server_id == ctx.guild.id,
-                    Transaction.created_at <= end_date
-                ).group_by(Transaction.user_id).all()
-                session.close()
-                return result
-            except Exception as e:
-                print(f"❌ ランキング集計エラー: {e}")
-                return []
                 
-        else:
-            try:
-                year, month = map(int, year_month.split("-"))
-                first_day = datetime(year, month, 1, tzinfo=timezone.utc)
-                last_day_num = calendar.monthrange(year, month)[1]
-                last_day = datetime(year, month, last_day_num, 23, 59, 59, tzinfo=timezone.utc)
-                period_name = f"{year_month}"
-            except ValueError:
-                await ctx.send("⚠️ フォーマット: YYYY-MM または '過去'")
-                return
-            
-            try:
-                session = SessionLocal()
-                result = session.query(
-                    Transaction.user_id,
-                    func.sum(Transaction.points).label('total_points')
-                ).filter(
-                    Transaction.server_id == ctx.guild.id,
-                    Transaction.created_at >= first_day,
-                    Transaction.created_at <= last_day
-                ).group_by(Transaction.user_id).all()
-                session.close()
-                return result
+                # ユーザー名取得を複数の方法で試す
+                user = message.author  # メッセージ作成者から直接取得
+                user_name = user.display_name if user else "未知のユーザー"
+                
+                # デバッグログ追加
+                print(f"🔍 デバッグ: user={user}, user.display_name={user.display_name if user else 'None'}")
+                
+                print(f"✅ ポイント付与成功: {message.author.id} に {points}pt")
+                print(f"🎉 {user_name} が {points}pt 獲得！")
+                
             except Exception as e:
-                print(f"❌ ランキング集計エラー: {e}")
-                return []
+                print(f"❌ ポイント付与エラー: {e}")
+            finally:
+                db.close()
+                
+    except Exception as e:
+        print(f"❌ リアクション処理エラー: {e}")
+
+# ランキングコマンド（修正版）
+@bot.command(name="ランキング")
+async def ranking(ctx):
+    try:
+        db = get_db()
+        try:
+            points_dict = calculate_points(db)
+            ranking_body = await format_ranking_message(points_dict, ctx.guild)
+            
+            embed = discord.Embed(
+                title=f"📊 {ctx.guild.name} 総合ランキング",
+                description=ranking_body,
+                color=discord.Color.purple()  # Botのアイコンに合わせた色
+            )
+            await ctx.send(embed=embed)
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"❌ 総合ランキングエラー: {e}")
+        import traceback
+        traceback.print_exc()
+        await ctx.send("❌ ランキングの作成に失敗しました")
+
+# 月間ランキングコマンド（修正版）
+@bot.command(name='月間ランキング')
+async def monthly_ranking(ctx, month: str = None):
+    """月間ランキングを表示します。"""
+    try:
+        # データベースからポイントを取得
+        db = get_db()
+        points = calculate_points(db, month=month)
+        db.close()
         
-        # ランキング集計
-        points_dict = {}
-        for user_id, points in rows:
-            points_dict[user_id] = points_dict.get(user_id, 0) + points
-        
-        # ランキング順にソート
-        ranking = sorted(points_dict.items(), key=lambda x: x[1], reverse=True)
-        
-        # メッセージ作成
-        if not ranking:
-            await ctx.send(f"📊 {period_name}のランキングデータがありません。")
+        if not points:
+            await ctx.send("📊 ランキングデータがありません。")
             return
             
-        medals = ["🥇", "🥈", "🥉"]
-        message = f"🏆 {ctx.guild.name} {period_name} ランキング 🏆\n\n"
+        # ランキングの本文を作成
+        ranking_body = await format_ranking_message(points, ctx.guild)
         
-        # テスト用固定ランキング
-        test_ranking = [
-            ("ゆず", 4),
-            ("モチモチ", 3),
-            ("よりとも", 1),
-            ("笑ちゃん", 1)
-        ]
+        # Embedを生成
+        embed = discord.Embed(
+            title=f"📊 {ctx.guild.name} 月間ランキング ({month if month else '今月'})",
+            description=ranking_body,
+            color=discord.Color.purple()  # Botのアイコンに合わせた色
+        )
         
-        # データベースのランキングとテストランキングを組み合わせる
-        combined_ranking = []
-        for i, (user_id, points) in enumerate(ranking[:6]):
-            user = ctx.guild.get_member(user_id)
-            username = user.display_name if user else "不明なユーザー"
-            combined_ranking.append((username, points))
+        await ctx.send(embed=embed)
         
-        # テストランキングを追加
-        for i, (test_name, test_points) in enumerate(test_ranking):
-            if len(combined_ranking) <= i:
-                combined_ranking.append((test_name, test_points))
-        
-        # ランキング表示
-        for i, (username, points) in enumerate(combined_ranking):
-            medal = medals[i] if i < 3 else f"{i+1}位"
-            message += f"{medal} {username}: {points}pt\n"
-        
-        await ctx.send(message)
     except Exception as e:
-        print(f"月間ランキングエラー: {e}")
-        await ctx.send("⚠️ ランキング表示中にエラーが発生しました。")
+        print(f"❌ 月間ランキングエラー: {e}")
+        import traceback
+        traceback.print_exc()
+        await ctx.send("❌ ランキングの作成に失敗しました")
 
-# ─── !help ─────────────────────────────────────
-@bot.command(name="help")
-async def _help(ctx):
-    server_name = SERVER_NAMES.get(ctx.guild.id, ctx.guild.name)
-    help_msg = f"""```
-📖 GlucoseManBot コマンド一覧 ({server_name})
+# ポイント表示コマンド（修正版）
+@bot.command(name="ポイント")
+async def command_show_points(ctx):
+    try:
+        db = get_db()
+        try:
+            points_dict = calculate_points(db, user_id=ctx.author.id)
+            total_points = points_dict.get(ctx.author.id, 0)
+            await ctx.send(f"📊 {ctx.author.display_name} のポイント: {total_points}pt")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"❌ ポイント表示コマンドエラー: {e}")
+        await ctx.send("❌ ポイントの表示に失敗しました")
 
-!ポイント - 自分の総ポイントを表示（このサーバーのみ）
-!ランキング - 総合ランキング（このサーバーのみ）
-!月間ランキング [期間] - 指定期間のランキング（このサーバーのみ）
-  例: !月間ランキング 2025-06
-  例: !月間ランキング 過去
-!reset - 全データリセット（権限者のみ）
-!help - このヘルプを表示
-
-※各サーバーのポイントは独立して管理されます
-```"""
-    await ctx.send(help_msg)
-
-# ─── データリセットコマンド（権限者のみ）────────
-@bot.command(name="reset")
-async def _reset(ctx):
-    if ctx.author.id not in AUTHORIZED:
-        return
-    with SessionLocal() as session:
-        # 特定サーバーのデータのみ削除
-        session.query(Transaction).filter_by(guild_id=str(ctx.guild.id)).delete()
-        session.commit()
-    server_name = SERVER_NAMES.get(ctx.guild.id, ctx.guild.name)
-    await ctx.send(f"🗑️ {server_name} の全データをリセットしました")
-
-# ─── エラーハンドリング ──────────────────────
+# デバッグ用のエラーハンドリング
 @bot.event
 async def on_command_error(ctx, error):
-    print("❌ on_command_error:", repr(error))
+    print(f"❌ コマンドエラー: {error}")
+    await ctx.send("⚠️ コマンドの実行中にエラーが発生しました")
 
-# ─── 起動 ─────────────────────────────────────# Bot起動
-if __name__ == "__main__":
+# 年間ランキングコマンド（新規追加）
+@bot.command(name='年間ランキング')
+async def yearly_ranking(ctx, year: int = None):
+    """年間ランキングを表示します。年が指定されない場合は現在の年になります。"""
     try:
-        print("🚀 データベース初期化開始")
-        init_db()  # データベースの初期化
-        print("✅ データベース初期化完了")
+        if year is None:
+            year = datetime.now().year
+
+        db = get_db()
+        points_dict = calculate_points(db, year=year)
+        db.close()
+
+        ranking_body = await format_ranking_message(points_dict, ctx.guild)
         
-        # ランキング更新タスクを開始
-        update_rankings.start()
+        # 年間MVP用にEmbedの色を金色にしてみます
+        embed = discord.Embed(
+            title=f"🏆 {ctx.guild.name} 年間ランキング ({year}年)",
+            description=ranking_body,
+            color=discord.Color.gold()
+        )
         
-        print("🚀 Bot起動開始")
-        bot.run(os.getenv('DISCORD_TOKEN'))
+        await ctx.send(embed=embed)
         
     except Exception as e:
-        print(f"❌ エラーが発生しました: {str(e)}")
-        print("データベースの初期化に失敗しました。ボットを起動できません。")
-        raise
+        print(f"❌ 年間ランキングエラー: {e}")
+        import traceback
+        traceback.print_exc()
+        await ctx.send("❌ ランキングの作成に失敗しました")
+
+# データベース初期化とBot起動
+if __name__ == "__main__":
+    try:
+        # データベース初期化（同期関数なのでasyncio.runは不要）
+        init_db()
+        print("✅ データベース初期化完了")
+        
+        # Botの起動
+        bot.run(os.getenv("DISCORD_BOT_TOKEN"))
+    except Exception as e:
+        print(f"❌ Bot起動エラー: {e}")
+        import traceback
+        traceback.print_exc()
