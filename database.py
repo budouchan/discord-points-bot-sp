@@ -25,11 +25,31 @@ def init_db():
         # テーブルを（なければ）作成する
         Base.metadata.create_all(bind=engine)
         
-        # データベースの種類に応じたテーブル存在確認
-        inspector = inspect(engine)
+        # データベースの種類を確認
+        is_postgres = DATABASE_URL and DATABASE_URL.startswith('postgres')
         
-        # テーブルの存在確認
-        if not inspector.has_table("transactions"):
+        # テーブル存在確認（データベースの種類に応じてクエリを変更）
+        with engine.connect() as conn:
+            if is_postgres:
+                # PostgreSQL用のテーブル存在確認
+                result = conn.execute(
+                    """
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = 'public' 
+                        AND table_name = 'transactions'
+                    );
+                    """
+                )
+                table_exists = result.scalar()
+            else:
+                # SQLite用のテーブル存在確認
+                result = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='transactions'"
+                )
+                table_exists = result.fetchone() is not None
+        
+        if not table_exists:
             raise Exception("transactionsテーブルが作成されませんでした")
             
         print("✅ データベース初期化完了")
