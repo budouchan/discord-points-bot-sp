@@ -42,18 +42,17 @@ def get_db():
     return SessionLocal()
 
 # ポイント付与処理（修正版）
-def award_points(db, recipient_id, giver_id, emoji_id, points, transaction_date):
+def award_points(db, recipient_id, giver_id, emoji_id, points):
     try:
         transaction = Transaction(
             recipient_id=recipient_id,
             points_awarded=points,
             giver_id=giver_id,
-            emoji_id=emoji_id,
-            effective_date=transaction_date  # リアクション日ではなく、渡された日付を使う
+            emoji_id=emoji_id
         )
         db.add(transaction)
         db.commit()
-        print(f"✅ ポイント付与成功: {recipient_id} に {points}pt (日付: {transaction_date})")
+        print(f"✅ ポイント付与成功: {recipient_id} に {points}pt")
         return True
     except Exception as e:
         db.rollback()
@@ -122,7 +121,7 @@ async def format_ranking_message(points_dict, guild):
     print(f"📋 最終リスト: {message_body.strip()}")
     return message_body
 
-# リアクション削除イベント（修正版）
+# リアクション削除イベント（新規追加）
 @bot.event
 async def on_raw_reaction_remove(payload):
     """リアクション削除時にポイントを減算"""
@@ -155,12 +154,11 @@ async def on_raw_reaction_remove(payload):
                     points_awarded=-points,  # マイナス値でポイントを減算
                     giver_id=payload.user_id,
                     emoji_id=str(payload.emoji),
-                    transaction_type='react_remove',
-                    effective_date=message.created_at  # ★★★ここが重要★★★
+                    transaction_type='react_remove'
                 )
                 db.add(transaction)
                 db.commit()
-                print(f"✅ ポイント減算成功: {message.author.display_name} から {-points}pt (日付: {message.created_at})")
+                print(f"✅ ポイント減算成功: {message.author.display_name} から {-points}pt")
             finally:
                 db.close()
     except Exception as e:
@@ -191,14 +189,17 @@ async def on_raw_reaction_add(payload):
                     recipient_id=message.author.id,
                     giver_id=payload.user_id,
                     emoji_id=str(payload.emoji),
-                    points=points,
-                    transaction_date=message.created_at  # ★★★ここが重要★★★
+                    points=points
                 )
                 
-                # ユーザー名取得
-                user = message.author
+                # ユーザー名取得を複数の方法で試す
+                user = message.author  # メッセージ作成者から直接取得
                 user_name = user.display_name if user else "未知のユーザー"
                 
+                # デバッグログ追加
+                print(f"🔍 デバッグ: user={user}, user.display_name={user.display_name if user else 'None'}")
+                
+                print(f"✅ ポイント付与成功: {message.author.id} に {points}pt")
                 print(f"🎉 {user_name} が {points}pt 獲得！")
                 
             except Exception as e:
