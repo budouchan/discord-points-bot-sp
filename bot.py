@@ -4,22 +4,8 @@ from datetime import datetime, timedelta
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from database import SessionLocal, init_db
-from sqlalchemy import Column, Integer, BigInteger, String, DateTime, select
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
-
-class Transaction(Base):
-    __tablename__ = 'transactions'
-    
-    id = Column(Integer, primary_key=True, index=True)
-    recipient_id = Column(BigInteger, nullable=False)
-    points_awarded = Column(Integer, nullable=False)
-    giver_id = Column(BigInteger)
-    emoji_id = Column(String)
-    transaction_type = Column(String, default='react')
-    effective_date = Column(DateTime, default=datetime.utcnow)
+from database import SessionLocal, init_db, Base
+from models import Transaction  # models.pyからTransactionをインポート
 
 # 環境変数読み込みとBot設定
 load_dotenv()
