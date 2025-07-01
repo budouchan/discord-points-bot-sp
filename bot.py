@@ -286,6 +286,14 @@ async def on_command_error(ctx, error):
     print(f"❌ コマンドエラー: {error}")
     await ctx.send("⚠️ コマンドの実行中にエラーが発生しました")
 
+# Bot起動時のイベント
+@bot.event
+async def on_ready():
+    print(f"✅ Bot is ready! Logged in as: {bot.user} (ID: {bot.user.id})")
+    print(f"✅ 参加サーバー数: {len(bot.guilds)}")
+    for guild in bot.guilds:
+        print(f"  - {guild.name} (ID: {guild.id})")
+
 # 年間ランキングコマンド（新規追加）
 @bot.command(name='年間ランキング')
 async def yearly_ranking(ctx, year: int = None):
@@ -295,8 +303,14 @@ async def yearly_ranking(ctx, year: int = None):
             year = datetime.now().year
 
         db = get_db()
-        points_dict = calculate_points(db, year=year)
-        db.close()
+        try:
+            points_dict = calculate_points(db, year=year)
+        finally:
+            db.close()
+
+        if not points_dict:
+            await ctx.send("❌ データがありません")
+            return
 
         ranking_body = await format_ranking_message(points_dict, ctx.guild)
         
