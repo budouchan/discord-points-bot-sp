@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 
 # モジュール読み込み
-from database import SessionLocal, init_db, get_db_info
+from database import SessionLocal, init_db, get_db_info, get_db
 from models import Transaction, User
 from utils import (TARGET_GUILD, AUTHORIZED, EMOJI_POINTS, 
                    format_ranking_message, SERVER_NAMES, format_status_ranking)
