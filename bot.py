@@ -108,6 +108,55 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         if db:
             db.close()
 
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    """リアクションが削除されたときに呼ばれるイベント"""
+    # 対象のサーバーか確認
+    if payload.guild_id != TARGET_GUILD:
+        return
+
+    emoji_str = str(payload.emoji)
+
+    # ポイント対象の絵文字か確認
+    if emoji_str not in EMOJI_POINTS:
+        return
+
+    # 減算するポイントを計算
+    points_to_deduct = -EMOJI_POINTS[emoji_str]
+
+    try:
+        db: Session = next(get_db())
+
+        # メッセージの投稿者を取得
+        channel = bot.get_channel(payload.channel_id)
+        if not isinstance(channel, discord.TextChannel): return
+
+        message = await channel.fetch_message(payload.message_id)
+        author_id = message.author.id
+
+        # ユーザー情報をDBで確認
+        user = db.query(User).filter(User.id == author_id).first()
+        if not user:
+            logging.warning(f"User not found for point deduction: {author_id}")
+            return
+
+        # ポイントを減算するトランザクションを記録
+        new_transaction = Transaction(
+            user_id=author_id,
+            points=points_to_deduct,
+            reason=f"Reaction removed by user_id {payload.user_id} with {emoji_str}"
+        )
+        db.add(new_transaction)
+        db.commit()
+
+        logging.info(f"✅ Points deducted: {abs(points_to_deduct)}pt from {message.author.name} for emoji {emoji_str} removal")
+
+    except Exception as e:
+        logging.error(f"Error in on_raw_reaction_remove: {e}", exc_info=True)
+    finally:
+        if 'db' in locals() and db:
+            db.close()
+
 # ─── コマンド ───────────────────────────────────────
 
 @bot.command(name="ranking")
