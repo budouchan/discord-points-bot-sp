@@ -95,7 +95,8 @@ async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
         new_transaction = Transaction(
             user_id=author_id,
             points=points,
-            reason=f"Reaction by {payload.member.display_name} with {emoji_str}"
+            reason=f"Reaction by {payload.member.display_name} with {emoji_str}",
+            message_timestamp=message.created_at  # メッセージの投稿日時を記録
         )
         db.add(new_transaction)
         db.commit()
@@ -144,7 +145,8 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
         new_transaction = Transaction(
             user_id=author_id,
             points=points_to_deduct,
-            reason=f"Reaction removed by user_id {payload.user_id} with {emoji_str}"
+            reason=f"Reaction removed by user_id {payload.user_id} with {emoji_str}",
+            message_timestamp=message.created_at  # メッセージの投稿日時を記録
         )
         db.add(new_transaction)
         db.commit()

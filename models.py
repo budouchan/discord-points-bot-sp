@@ -19,5 +19,6 @@ class Transaction(Base):
     points = Column(Integer, nullable=False)
     reason = Column(String)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    message_timestamp = Column(DateTime(timezone=True), nullable=False)
 
     user = relationship("User", back_populates="transactions")
