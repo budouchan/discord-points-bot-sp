@@ -112,7 +112,6 @@ def get_ranking(guild_id: int, limit: int = 10):
     finally:
         db.close()
 
-# Discord Bot設定
 intents = discord.Intents.default()
 intents.message_content = True
 intents.reactions = True
