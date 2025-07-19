@@ -16,9 +16,10 @@ class Transaction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
+    guild_id = Column(BigInteger, nullable=False, index=True) # サーバーIDを記録
     points = Column(Integer, nullable=False)
     reason = Column(String)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
-    message_timestamp = Column(DateTime(timezone=True), nullable=False)
+    message_timestamp = Column(DateTime(timezone=True), nullable=False) # メッセージ投稿日
 
     user = relationship("User", back_populates="transactions")
