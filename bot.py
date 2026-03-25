@@ -1,7 +1,7 @@
 import discord
 from discord.ext import tasks
 import asyncio
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, BigInteger
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, BigInteger, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -43,6 +43,14 @@ class Transaction(Base):
 def init_db():
     print("📊 PostgreSQLテーブル作成中...")
     Base.metadata.create_all(bind=engine)
+    # usersテーブルにusernameカラムが無ければ追加
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR"))
+            conn.commit()
+            print("✅ usernameカラム確認・追加完了")
+        except Exception as e:
+            print(f"カラム追加スキップ: {e}")
     print("✅ PostgreSQLテーブル作成完了")
 
 def get_or_create_user(db, user_id: int, username: str):
