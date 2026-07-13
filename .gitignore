@@ -12,6 +12,11 @@ __pycache__/
 *.sqlite
 *.sqlite3
 
+# Space pipeline
+recordings/
+*.wav
+*.m4a
+
 # IDE / Editor
 .vscode/
 .idea/
