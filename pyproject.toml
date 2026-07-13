@@ -1,0 +1,21 @@
+[project]
+name = "space-pipeline"
+version = "1.0.0"
+description = "スペース録音 → 文字起こし → コンテンツ一括生成パイプライン"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.40.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+space = "space_pipeline.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["space_pipeline"]

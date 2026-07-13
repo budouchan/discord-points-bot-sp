@@ -1,6 +1,11 @@
-"""Whisper APIで音声を文字起こしするモジュール。
+"""OpenAIの音声認識APIで音声を文字起こしするモジュール。
 
-Whisper APIのファイルサイズ上限(25MB)を回避するため、
+対応モデル(.env の TRANSCRIBE_MODEL で切り替え):
+- whisper-1: セグメント単位のタイムスタンプ付き(verbose_json)
+- gpt-4o-transcribe / gpt-4o-mini-transcribe など新しいモデル:
+  セグメントタイムスタンプ非対応のため、チャンク単位のタイムスタンプで代替
+
+APIのファイルサイズ上限(25MB)を回避するため、
 ffmpegで音声を一定時間ごとに分割してから順番に文字起こしし、
 タイムスタンプをオフセット補正して結合する。
 """
@@ -54,37 +59,61 @@ def format_timestamp(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
+# セグメント単位のタイムスタンプ(verbose_json)に対応しているモデル
+SEGMENT_CAPABLE_MODELS = {"whisper-1"}
+
+
+def _supports_segments(model: str) -> bool:
+    return model in SEGMENT_CAPABLE_MODELS
+
+
 def transcribe(audio_path: Path, output_dir: Path) -> tuple[str, list[dict]]:
     """音声ファイルを文字起こしし、(全文, セグメントのリスト) を返す。
 
     セグメントは {"start": 秒, "end": 秒, "text": 文字列} の辞書。
+    verbose_json 非対応のモデルではチャンク全体を1セグメントとして扱う。
     全文は transcript.txt、タイムスタンプ付きは transcript_timestamps.txt、
     生データは segments.json として output_dir に保存する。
     """
     client = OpenAI(api_key=config.OPENAI_API_KEY)
+    model = config.TRANSCRIBE_MODEL
+    use_segments = _supports_segments(model)
     segments: list[dict] = []
     offset = 0.0
 
     with tempfile.TemporaryDirectory() as tmp:
         chunks = _split_audio(audio_path, Path(tmp))
-        print(f"文字起こし開始: {len(chunks)} チャンク")
+        print(f"文字起こし開始: {len(chunks)} チャンク (モデル: {model})")
+        if not use_segments:
+            print("  ※ このモデルは詳細タイムスタンプ非対応のため、"
+                  f"{config.CHUNK_SEC}秒チャンク単位のタイムスタンプになります")
 
         for i, chunk in enumerate(chunks, 1):
             print(f"  チャンク {i}/{len(chunks)} を処理中...")
+            duration = _probe_duration(chunk)
             with open(chunk, "rb") as f:
                 result = client.audio.transcriptions.create(
-                    model=config.WHISPER_MODEL,
+                    model=model,
                     file=f,
                     language=config.TRANSCRIBE_LANGUAGE,
-                    response_format="verbose_json",
+                    response_format="verbose_json" if use_segments else "json",
                 )
-            for seg in result.segments or []:
-                segments.append({
-                    "start": seg.start + offset,
-                    "end": seg.end + offset,
-                    "text": seg.text.strip(),
-                })
-            offset += _probe_duration(chunk)
+            if use_segments:
+                for seg in result.segments or []:
+                    segments.append({
+                        "start": seg.start + offset,
+                        "end": seg.end + offset,
+                        "text": seg.text.strip(),
+                    })
+            else:
+                text = (result.text or "").strip()
+                if text:
+                    segments.append({
+                        "start": offset,
+                        "end": offset + duration,
+                        "text": text,
+                    })
+            offset += duration
 
     full_text = "\n".join(s["text"] for s in segments)
     timestamped = "\n".join(
