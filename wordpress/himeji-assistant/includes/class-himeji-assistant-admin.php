@@ -45,9 +45,10 @@ class Himeji_Assistant_Admin {
 			self::CORE_HANDLE,
 			'HimejiAssistantData',
 			array(
-				'panels'       => $core->panels_meta(),
-				'hiddenPanels' => Himeji_Assistant_REST::hidden_panels(),
-				'aiAvailable'  => Himeji_Assistant_AI::is_available(),
+				'panels'         => $core->panels_meta(),
+				'hiddenPanels'   => Himeji_Assistant_REST::hidden_panels(),
+				'favoritePanels' => Himeji_Assistant_REST::favorite_panels(),
+				'aiAvailable'    => Himeji_Assistant_AI::is_available(),
 			)
 		);
 

@@ -101,7 +101,7 @@
 		} else if ( results && results.length === 0 ) {
 			children.push( el( 'p', { key: 'empty', className: 'himeji-assistant__help' }, '該当する記事が見つかりませんでした。' ) );
 		} else if ( results ) {
-			children.push( el( assistant.ui.ArticleList, { key: 'results', items: results } ) );
+			children.push( el( assistant.ui.ArticleList, { key: 'results', items: results, panel: 'link-card-search' } ) );
 		} else {
 			children.push( el( 'p', { key: 'help', className: 'himeji-assistant__help' },
 				'キーワードを入力すると既存記事を検索し、リンクカードを本文に挿入できます。HTMLの知識は不要です。' ) );

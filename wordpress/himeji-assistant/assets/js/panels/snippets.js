@@ -15,9 +15,10 @@
 	function insertSnippet( item ) {
 		if ( 'embed' === item.type ) {
 			assistant.insertBlockAtCursor( wp.blocks.createBlock( 'core/embed' ) );
-			return;
+		} else {
+			assistant.insertShortcode( item.template || '' );
 		}
-		assistant.insertShortcode( item.template || '' );
+		assistant.trackUsage( 'snippets' );
 	}
 
 	function SnippetsPanel() {

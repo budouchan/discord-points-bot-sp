@@ -111,3 +111,17 @@
 	font-size: 11px;
 	color: #757575;
 }
+
+.himeji-assistant__panel-tools {
+	display: flex;
+	justify-content: flex-end;
+	margin: -8px 0 0;
+}
+
+.himeji-assistant__fav.is-favorite {
+	color: #dba617;
+}
+
+.himeji-assistant__fav:hover {
+	color: #dba617;
+}

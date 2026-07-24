@@ -4,7 +4,12 @@ WordPress の投稿編集画面に「姫路の種アシスタント」サイド�
 単機能ツールではなく、ライター全員が使う **「編集OS」** として設計されています:
 
 - すべての機能は「パネル」として実装され、1つのサイドバーに並ぶ
+- **お気に入り(★)**: ライターごとによく使うパネルを上に固定できる。
+  お気に入りだけ開いた状態で表示され、他は畳まれるのでサイドバーが長くならない
 - パネルはユーザーごとに表示/非表示を切り替えられる(サイドバー内の「パネル設定」)
+- **利用状況の計測**: 「挿入」などの実アクションをパネル別・日別に記録(90日保持)。
+  設定 → 姫路の種アシスタント で直近7日/30日の集計を確認でき、
+  どのパネルを前面に出すか・削るかをデータで判断できる
 - 外部プラグインからもパネルを追加できる(アクションフック1つ)
 - AI機能は独立した「AIサービス層」経由で使い、ChatGPT / Claude / Gemini などの
   プロバイダーを差し替え・追加できる
@@ -145,7 +150,8 @@ himeji-assistant/
 
 - `HimejiAssistant.insertShortcode( text )` … カーソル位置にショートコード挿入
 - `HimejiAssistant.insertBlockAtCursor( block )` … 任意ブロック挿入
-- `HimejiAssistant.ui.ArticleList` … 記事リストUI(検索・AI推薦で共用)
+- `HimejiAssistant.ui.ArticleList` … 記事リストUI(検索・AI推薦で共用。`panel` を渡すと挿入時に利用記録)
+- `HimejiAssistant.trackUsage( panelId )` … 利用記録(実アクション時にパネルから呼ぶ)
 - `HimejiAssistant.ai.complete( prompt, opts )` … AIサービス層
 
 ## パネルの追加方法
@@ -243,7 +249,8 @@ add_filter( 'himeji_assistant_ai_providers', function ( $providers ) {
 | `GET /himeji-assistant/v1/search?q=…&orderby=relevance\|date\|popular` | 記事検索 |
 | `GET /himeji-assistant/v1/maps/search?q=…` | 地図候補検索(要APIキー、1時間キャッシュ) |
 | `POST /himeji-assistant/v1/recommend` | 関連記事推薦(WPが検索→AIが並び替え) |
-| `GET/POST /himeji-assistant/v1/prefs` | パネル表示設定の取得/保存(ユーザーごと) |
+| `GET/POST /himeji-assistant/v1/prefs` | パネル設定の取得/保存(hidden=非表示, favorites=お気に入り。ユーザーごと) |
+| `POST /himeji-assistant/v1/usage` | パネル利用の記録(パネル別・日別のサイト全体集計) |
 | `POST /himeji-assistant/v1/ai/complete` | AIサービス層への窓口 |
 
 すべて `edit_posts` 権限(ライター以上)が必要です。

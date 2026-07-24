@@ -34,7 +34,7 @@
 	var Button = wp.components.Button;
 	var apiFetch = wp.apiFetch;
 
-	var data = window.HimejiAssistantData || { panels: [], hiddenPanels: [], aiAvailable: false };
+	var data = window.HimejiAssistantData || { panels: [], hiddenPanels: [], favoritePanels: [], aiAvailable: false };
 
 	// ---- 公開API ----------------------------------------------------------
 	var registry = window.HimejiAssistant = window.HimejiAssistant || {};
@@ -57,6 +57,19 @@
 	};
 
 	/**
+	 * パネル利用の記録(fire-and-forget)。
+	 * 「挿入」などの実アクション時にパネル側から呼ぶ。
+	 * 集計は 設定 → 姫路の種アシスタント に表示される。
+	 */
+	registry.trackUsage = function ( panelId ) {
+		apiFetch( {
+			path: '/himeji-assistant/v1/usage',
+			method: 'POST',
+			data: { panel: panelId },
+		} ).catch( function () {} ); // 記録失敗で編集を妨げない
+	};
+
+	/**
 	 * 記事リストUI(サムネ+タイトル+URL+挿入ボタン)。
 	 * 検索・AI推薦など { id, title, url, thumbnail } 形式の結果を持つ
 	 * パネルで共用する。
@@ -69,6 +82,9 @@
 		var items = props.items || [];
 		var onInsert = props.onInsert || function ( item ) {
 			registry.insertShortcode( '[himeji_card id="' + item.id + '"]' );
+			if ( props.panel ) {
+				registry.trackUsage( props.panel );
+			}
 		};
 		return el(
 			'ul',
@@ -139,7 +155,7 @@
 			Fragment,
 			null,
 			el( 'p', { className: 'himeji-assistant__help' },
-				'使わないパネルは非表示にできます(自分の画面にだけ反映されます)。' ),
+				'使わないパネルは非表示にできます。★でよく使うパネルを上に固定できます(どちらも自分の画面にだけ反映されます)。' ),
 			props.panels.map( function ( panel ) {
 				var meta = findMeta( panel.name );
 				return el( ToggleControl, {
@@ -167,22 +183,47 @@
 		var hiddenState = useState( data.hiddenPanels || [] );
 		var hidden = hiddenState[ 0 ];
 		var setHidden = hiddenState[ 1 ];
+		var favState = useState( data.favoritePanels || [] );
+		var favorites = favState[ 0 ];
+		var setFavorites = favState[ 1 ];
+
+		function savePrefs( prefs ) {
+			apiFetch( {
+				path: '/himeji-assistant/v1/prefs',
+				method: 'POST',
+				data: prefs,
+			} );
+		}
 
 		function onToggle( id, visible ) {
 			var next = visible
 				? hidden.filter( function ( h ) { return h !== id; } )
 				: hidden.concat( id );
 			setHidden( next );
-			apiFetch( {
-				path: '/himeji-assistant/v1/prefs',
-				method: 'POST',
-				data: { hidden: next },
-			} );
+			savePrefs( { hidden: next } );
 		}
 
+		function onToggleFavorite( id ) {
+			var next = favorites.indexOf( id ) !== -1
+				? favorites.filter( function ( f ) { return f !== id; } )
+				: favorites.concat( id );
+			setFavorites( next );
+			savePrefs( { favorites: next } );
+		}
+
+		// お気に入りを上に固定し、それ以外は order 順で続ける。
 		var panels = sortedPanels();
-		var visiblePanels = panels.filter( function ( panel ) {
-			return hidden.indexOf( panel.name ) === -1;
+		var visiblePanels = panels
+			.filter( function ( panel ) {
+				return hidden.indexOf( panel.name ) === -1;
+			} )
+			.sort( function ( a, b ) {
+				var aFav = favorites.indexOf( a.name ) !== -1 ? 0 : 1;
+				var bFav = favorites.indexOf( b.name ) !== -1 ? 0 : 1;
+				return aFav - bFav;
+			} );
+		var hasFavorites = visiblePanels.some( function ( panel ) {
+			return favorites.indexOf( panel.name ) !== -1;
 		} );
 
 		return el(
@@ -195,9 +236,30 @@
 				PluginSidebar,
 				{ name: 'himeji-assistant-sidebar', title: '姫路の種アシスタント', icon: 'lightbulb' },
 				visiblePanels.map( function ( panel, i ) {
+					var isFavorite = favorites.indexOf( panel.name ) !== -1;
+					// サイドバーが長くなりすぎないよう、開くのは
+					// お気に入り(無ければ先頭の1つ)だけ。他は畳んでおく。
+					var initialOpen = hasFavorites ? isFavorite : i === 0;
 					return el(
 						PanelBody,
-						{ key: panel.name, title: panel.title, initialOpen: i === 0 },
+						{
+							key: panel.name,
+							title: ( isFavorite ? '★ ' : '' ) + panel.title,
+							initialOpen: initialOpen,
+						},
+						el(
+							'div',
+							{ className: 'himeji-assistant__panel-tools' },
+							el( Button, {
+								icon: isFavorite ? 'star-filled' : 'star-empty',
+								label: isFavorite ? 'お気に入りから外す' : 'お気に入りに追加して上に固定',
+								isSmall: true,
+								className: 'himeji-assistant__fav' + ( isFavorite ? ' is-favorite' : '' ),
+								onClick: function () {
+									onToggleFavorite( panel.name );
+								},
+							} )
+						),
 						el( panel.render )
 					);
 				} ),

@@ -50,6 +50,7 @@
 			} ).then( function ( res ) {
 				setResult( res );
 				setLoading( false );
+				assistant.trackUsage( 'related-suggest' );
 			} ).catch( function ( err ) {
 				setLoading( false );
 				setError( ( err && err.message ) || '推薦の取得に失敗しました。' );
@@ -80,7 +81,7 @@
 					result.ai
 						? 'AI(' + result.provider + ')が選んだ関連記事です。'
 						: 'AIが未設定のため、カテゴリー・検索の関連度スコア順で表示しています。' ) );
-				children.push( el( assistant.ui.ArticleList, { key: 'results', items: result.items } ) );
+				children.push( el( assistant.ui.ArticleList, { key: 'results', items: result.items, panel: 'related-suggest' } ) );
 			}
 		}
 

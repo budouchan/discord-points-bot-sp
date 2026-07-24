@@ -31,6 +31,7 @@
 		}
 		sc += ']';
 		assistant.insertShortcode( sc );
+		assistant.trackUsage( 'map-search' );
 	}
 
 	function MapSearchPanel() {
