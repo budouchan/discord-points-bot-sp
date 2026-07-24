@@ -1,10 +1,8 @@
 /**
- * 姫路の種アシスタント — ブロックエディタ用サイドバー。
+ * パネル: リンクカード検索(編集OSの第1号パネル)。
  *
- * ビルド不要で動くよう wp.element.createElement で書いている。
- * 新しい機能(地図検索・カテゴリ提案など)は
- * window.HimejiAssistant.registerPanel({ name, title, render }) で
- * パネルを1つ登録するだけで、このサイドバーに追加される。
+ * キーワードで過去記事を検索し、「カードを挿入」でカーソル位置に
+ * [himeji_card id="…"] ショートコードブロックを挿入する。
  */
 ( function ( wp ) {
 	'use strict';
@@ -12,27 +10,13 @@
 	var el = wp.element.createElement;
 	var useState = wp.element.useState;
 	var useRef = wp.element.useRef;
-	var registerPlugin = wp.plugins.registerPlugin;
-	// WP 6.6 以降は wp.editor、それ以前は wp.editPost に PluginSidebar がある。
-	var editorPkg = ( wp.editor && wp.editor.PluginSidebar ) ? wp.editor : wp.editPost;
-	var PluginSidebar = editorPkg.PluginSidebar;
-	var PluginSidebarMoreMenuItem = editorPkg.PluginSidebarMoreMenuItem;
-	var components = wp.components;
-	var PanelBody = components.PanelBody;
-	var TextControl = components.TextControl;
-	var Button = components.Button;
-	var Spinner = components.Spinner;
+	var TextControl = wp.components.TextControl;
+	var Button = wp.components.Button;
+	var Spinner = wp.components.Spinner;
 	var dispatch = wp.data.dispatch;
 	var select = wp.data.select;
 	var apiFetch = wp.apiFetch;
 
-	// ---- パネルレジストリ(将来の機能追加ポイント) -------------------------
-	var registry = window.HimejiAssistant = window.HimejiAssistant || { panels: [] };
-	registry.registerPanel = registry.registerPanel || function ( panel ) {
-		registry.panels.push( panel );
-	};
-
-	// ---- カーソル位置へショートコードブロックを挿入 -----------------------
 	function insertCard( postId ) {
 		var block = wp.blocks.createBlock( 'core/shortcode', {
 			text: '[himeji_card id="' + postId + '"]',
@@ -41,7 +25,6 @@
 		dispatch( 'core/block-editor' ).insertBlocks( block, point.index, point.rootClientId );
 	}
 
-	// ---- リンクカード検索パネル -------------------------------------------
 	function LinkCardPanel() {
 		var queryState = useState( '' );
 		var query = queryState[ 0 ];
@@ -145,37 +128,10 @@
 		return el( 'div', { className: 'himeji-assistant__panel' }, children );
 	}
 
-	// 標準搭載パネルとして登録
-	registry.registerPanel( {
+	window.HimejiAssistant.registerPanel( {
 		name: 'link-card-search',
 		title: 'リンクカード検索',
+		order: 10,
 		render: LinkCardPanel,
-	} );
-
-	// ---- サイドバー本体 ---------------------------------------------------
-	function Sidebar() {
-		return el(
-			wp.element.Fragment,
-			null,
-			PluginSidebarMoreMenuItem
-				? el( PluginSidebarMoreMenuItem, { target: 'himeji-assistant-sidebar', icon: 'lightbulb' }, '姫路の種アシスタント' )
-				: null,
-			el(
-				PluginSidebar,
-				{ name: 'himeji-assistant-sidebar', title: '姫路の種アシスタント', icon: 'lightbulb' },
-				registry.panels.map( function ( panel, i ) {
-					return el(
-						PanelBody,
-						{ key: panel.name, title: panel.title, initialOpen: i === 0 },
-						el( panel.render )
-					);
-				} )
-			)
-		);
-	}
-
-	registerPlugin( 'himeji-assistant', {
-		render: Sidebar,
-		icon: 'lightbulb',
 	} );
 } )( window.wp );

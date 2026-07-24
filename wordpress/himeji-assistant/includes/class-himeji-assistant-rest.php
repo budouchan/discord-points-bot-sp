@@ -1,9 +1,12 @@
 <?php
 /**
- * 記事検索用の軽量 REST エンドポイント。
+ * 編集OSコアの REST エンドポイント。
  *
- * GET /wp-json/himeji-assistant/v1/search?q=キーワード
- * → [ { id, title, url, date, thumbnail }, ... ]
+ * - GET  /himeji-assistant/v1/prefs  … パネル表示設定の取得
+ * - POST /himeji-assistant/v1/prefs  … パネル表示設定の保存(ユーザーごと)
+ *
+ * 各パネル固有のエンドポイント(検索など)は各パネルクラスが
+ * 同じ名前空間に register する。
  */
 
 defined( 'ABSPATH' ) || exit;
@@ -12,66 +15,57 @@ class Himeji_Assistant_REST {
 
 	const NAMESPACE = 'himeji-assistant/v1';
 
+	const META_HIDDEN_PANELS = 'himeji_assistant_hidden_panels';
+
 	public static function init() {
 		add_action( 'rest_api_init', array( __CLASS__, 'register_routes' ) );
-	}
-
-	public static function register_routes() {
-		register_rest_route(
-			self::NAMESPACE,
-			'/search',
-			array(
-				'methods'             => WP_REST_Server::READABLE,
-				'callback'            => array( __CLASS__, 'search' ),
-				'permission_callback' => array( __CLASS__, 'can_use' ),
-				'args'                => array(
-					'q'        => array(
-						'type'              => 'string',
-						'required'          => true,
-						'sanitize_callback' => 'sanitize_text_field',
-					),
-					'per_page' => array(
-						'type'    => 'integer',
-						'default' => 10,
-						'minimum' => 1,
-						'maximum' => 20,
-					),
-				),
-			)
-		);
 	}
 
 	public static function can_use() {
 		return current_user_can( 'edit_posts' );
 	}
 
-	public static function search( WP_REST_Request $request ) {
-		$post_types = apply_filters( 'himeji_assistant_search_post_types', array( 'post', 'page' ) );
-
-		$query = new WP_Query(
+	public static function register_routes() {
+		register_rest_route(
+			self::NAMESPACE,
+			'/prefs',
 			array(
-				's'                      => $request['q'],
-				'post_type'              => $post_types,
-				'post_status'            => 'publish',
-				'posts_per_page'         => (int) $request['per_page'],
-				'orderby'                => 'relevance',
-				'no_found_rows'          => true,
-				'update_post_term_cache' => false,
-				'ignore_sticky_posts'    => true,
+				array(
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => array( __CLASS__, 'get_prefs' ),
+					'permission_callback' => array( __CLASS__, 'can_use' ),
+				),
+				array(
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => array( __CLASS__, 'save_prefs' ),
+					'permission_callback' => array( __CLASS__, 'can_use' ),
+					'args'                => array(
+						'hidden' => array(
+							'type'     => 'array',
+							'required' => true,
+							'items'    => array( 'type' => 'string' ),
+						),
+					),
+				),
 			)
 		);
+	}
 
-		$items = array();
-		foreach ( $query->posts as $post ) {
-			$items[] = array(
-				'id'        => $post->ID,
-				'title'     => html_entity_decode( get_the_title( $post ), ENT_QUOTES, 'UTF-8' ),
-				'url'       => get_permalink( $post ),
-				'date'      => get_the_date( 'Y-m-d', $post ),
-				'thumbnail' => get_the_post_thumbnail_url( $post, 'thumbnail' ) ?: '',
-			);
-		}
+	/** 現在のユーザーが非表示にしているパネルIDの配列。 */
+	public static function hidden_panels( $user_id = 0 ) {
+		$user_id = $user_id ?: get_current_user_id();
+		$hidden  = get_user_meta( $user_id, self::META_HIDDEN_PANELS, true );
+		return is_array( $hidden ) ? array_values( array_map( 'sanitize_key', $hidden ) ) : array();
+	}
 
-		return rest_ensure_response( $items );
+	public static function get_prefs() {
+		return rest_ensure_response( array( 'hidden' => self::hidden_panels() ) );
+	}
+
+	public static function save_prefs( WP_REST_Request $request ) {
+		$known  = array_keys( Himeji_Assistant_Core::instance()->panels() );
+		$hidden = array_values( array_intersect( array_map( 'sanitize_key', (array) $request['hidden'] ), $known ) );
+		update_user_meta( get_current_user_id(), self::META_HIDDEN_PANELS, $hidden );
+		return rest_ensure_response( array( 'hidden' => $hidden ) );
 	}
 }

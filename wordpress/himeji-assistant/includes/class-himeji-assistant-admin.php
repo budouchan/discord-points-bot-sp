@@ -2,13 +2,17 @@
 /**
  * 管理画面への組み込み。
  *
- * - ブロックエディタ(Gutenberg): 右サイドバー「姫路の種アシスタント」
- * - クラシックエディタ: サイドバーのメタボックス
+ * - ブロックエディタ(Gutenberg): 右サイドバー「姫路の種アシスタント」。
+ *   コアJS(サイドバーの器 + パネル設定)を読み込んだあと、
+ *   各パネルの editor_script() を依存付きで読み込む。
+ * - クラシックエディタ: サイドバーのメタボックス(現状はリンクカード検索のみ)。
  */
 
 defined( 'ABSPATH' ) || exit;
 
 class Himeji_Assistant_Admin {
+
+	const CORE_HANDLE = 'himeji-assistant-core';
 
 	public static function init() {
 		add_action( 'enqueue_block_editor_assets', array( __CLASS__, 'enqueue_block_editor' ) );
@@ -27,13 +31,37 @@ class Himeji_Assistant_Admin {
 			return;
 		}
 
+		$core = Himeji_Assistant_Core::instance();
+
 		wp_enqueue_script(
-			'himeji-assistant-editor',
-			HIMEJI_ASSISTANT_URL . 'assets/js/editor-sidebar.js',
-			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-blocks', 'wp-api-fetch' ),
+			self::CORE_HANDLE,
+			HIMEJI_ASSISTANT_URL . 'assets/js/assistant-core.js',
+			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-api-fetch' ),
 			HIMEJI_ASSISTANT_VERSION,
 			true
 		);
+
+		wp_localize_script(
+			self::CORE_HANDLE,
+			'HimejiAssistantData',
+			array(
+				'panels'       => $core->panels_meta(),
+				'hiddenPanels' => Himeji_Assistant_REST::hidden_panels(),
+				'aiAvailable'  => Himeji_Assistant_AI::is_available(),
+			)
+		);
+
+		// 各パネルのUIスクリプト。コアの後に読み込む。
+		foreach ( $core->panels() as $panel ) {
+			$script = $panel->editor_script();
+			if ( ! $script || empty( $script['handle'] ) || empty( $script['src'] ) ) {
+				continue;
+			}
+			$deps   = isset( $script['deps'] ) ? (array) $script['deps'] : array();
+			$deps[] = self::CORE_HANDLE;
+			wp_enqueue_script( $script['handle'], $script['src'], $deps, HIMEJI_ASSISTANT_VERSION, true );
+		}
+
 		wp_enqueue_style(
 			'himeji-assistant-admin',
 			HIMEJI_ASSISTANT_URL . 'assets/css/admin.css',
@@ -41,6 +69,8 @@ class Himeji_Assistant_Admin {
 			HIMEJI_ASSISTANT_VERSION
 		);
 	}
+
+	// ---- クラシックエディタ ---------------------------------------------
 
 	public static function add_classic_meta_box() {
 		add_meta_box(
