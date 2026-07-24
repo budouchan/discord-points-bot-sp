@@ -36,7 +36,7 @@ class Himeji_Assistant_Admin {
 		wp_enqueue_script(
 			self::CORE_HANDLE,
 			HIMEJI_ASSISTANT_URL . 'assets/js/assistant-core.js',
-			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-api-fetch' ),
+			array( 'wp-plugins', 'wp-edit-post', 'wp-element', 'wp-components', 'wp-data', 'wp-blocks', 'wp-api-fetch' ),
 			HIMEJI_ASSISTANT_VERSION,
 			true
 		);
@@ -60,6 +60,10 @@ class Himeji_Assistant_Admin {
 			$deps   = isset( $script['deps'] ) ? (array) $script['deps'] : array();
 			$deps[] = self::CORE_HANDLE;
 			wp_enqueue_script( $script['handle'], $script['src'], $deps, HIMEJI_ASSISTANT_VERSION, true );
+
+			if ( ! empty( $script['data']['name'] ) ) {
+				wp_localize_script( $script['handle'], $script['data']['name'], $script['data']['value'] );
+			}
 		}
 
 		wp_enqueue_style(

@@ -31,6 +31,7 @@
 	var PluginSidebarMoreMenuItem = editorPkg.PluginSidebarMoreMenuItem;
 	var PanelBody = wp.components.PanelBody;
 	var ToggleControl = wp.components.ToggleControl;
+	var Button = wp.components.Button;
 	var apiFetch = wp.apiFetch;
 
 	var data = window.HimejiAssistantData || { panels: [], hiddenPanels: [], aiAvailable: false };
@@ -40,6 +41,67 @@
 	registry.panels = registry.panels || [];
 	registry.registerPanel = function ( panel ) {
 		registry.panels.push( panel );
+	};
+
+	// ---- 共通ヘルパー(パネルから利用) ------------------------------------
+
+	/** カーソル位置(選択ブロックの直後)にブロックを挿入する。 */
+	registry.insertBlockAtCursor = function ( block ) {
+		var point = wp.data.select( 'core/block-editor' ).getBlockInsertionPoint();
+		wp.data.dispatch( 'core/block-editor' ).insertBlocks( block, point.index, point.rootClientId );
+	};
+
+	/** カーソル位置にショートコードブロックを挿入する。 */
+	registry.insertShortcode = function ( text ) {
+		registry.insertBlockAtCursor( wp.blocks.createBlock( 'core/shortcode', { text: text } ) );
+	};
+
+	/**
+	 * 記事リストUI(サムネ+タイトル+URL+挿入ボタン)。
+	 * 検索・AI推薦など { id, title, url, thumbnail } 形式の結果を持つ
+	 * パネルで共用する。
+	 *
+	 * props: { items, insertLabel?, onInsert? }
+	 * onInsert 省略時は [himeji_card id="…"] を挿入する。
+	 */
+	registry.ui = registry.ui || {};
+	registry.ui.ArticleList = function ( props ) {
+		var items = props.items || [];
+		var onInsert = props.onInsert || function ( item ) {
+			registry.insertShortcode( '[himeji_card id="' + item.id + '"]' );
+		};
+		return el(
+			'ul',
+			{ className: 'himeji-assistant__results' },
+			items.map( function ( item ) {
+				return el(
+					'li',
+					{ key: item.id, className: 'himeji-assistant__item' },
+					item.thumbnail
+						? el( 'img', { className: 'himeji-assistant__thumb', src: item.thumbnail, alt: '' } )
+						: el( 'span', { className: 'himeji-assistant__thumb himeji-assistant__thumb--empty' } ),
+					el(
+						'div',
+						{ className: 'himeji-assistant__meta' },
+						el( 'div', { className: 'himeji-assistant__title', title: item.title }, item.title ),
+						el( 'a', {
+							className: 'himeji-assistant__url',
+							href: item.url,
+							target: '_blank',
+							rel: 'noreferrer noopener',
+						}, item.url.replace( /^https?:\/\//, '' ) ),
+						el( Button, {
+							variant: 'secondary',
+							isSmall: true,
+							className: 'himeji-assistant__insert',
+							onClick: function () {
+								onInsert( item );
+							},
+						}, props.insertLabel || 'カードを挿入' )
+					)
+				);
+			} )
+		);
 	};
 
 	/**

@@ -67,6 +67,11 @@ class Himeji_Panel_Link_Card_Search extends Himeji_Assistant_Panel {
 						'minimum' => 1,
 						'maximum' => 20,
 					),
+					'orderby'  => array(
+						'type'    => 'string',
+						'default' => 'relevance',
+						'enum'    => array( 'relevance', 'date', 'popular' ),
+					),
 				),
 			)
 		);
@@ -75,18 +80,37 @@ class Himeji_Panel_Link_Card_Search extends Himeji_Assistant_Panel {
 	public function search( WP_REST_Request $request ) {
 		$post_types = apply_filters( 'himeji_assistant_search_post_types', array( 'post', 'page' ) );
 
-		$query = new WP_Query(
-			array(
-				's'                      => $request['q'],
-				'post_type'              => $post_types,
-				'post_status'            => 'publish',
-				'posts_per_page'         => (int) $request['per_page'],
-				'orderby'                => 'relevance',
-				'no_found_rows'          => true,
-				'update_post_term_cache' => false,
-				'ignore_sticky_posts'    => true,
-			)
+		// 検索(s)はタイトル・本文・抜粋が対象。並び順は3種類:
+		// relevance = 関連度順 / date = 新着順 / popular = 人気順
+		$args = array(
+			's'                      => $request['q'],
+			'post_type'              => $post_types,
+			'post_status'            => 'publish',
+			'posts_per_page'         => (int) $request['per_page'],
+			'orderby'                => 'relevance',
+			'no_found_rows'          => true,
+			'update_post_term_cache' => false,
+			'ignore_sticky_posts'    => true,
 		);
+
+		if ( 'date' === $request['orderby'] ) {
+			$args['orderby'] = 'date';
+			$args['order']   = 'DESC';
+		} elseif ( 'popular' === $request['orderby'] ) {
+			// 閲覧数プラグイン(WP-PostViews等)を使っている場合は
+			// そのメタキーをフィルターで指定すると閲覧数順になる。
+			// 未指定時はコメント数順。
+			$views_key = apply_filters( 'himeji_assistant_views_meta_key', '' );
+			if ( $views_key ) {
+				$args['meta_key'] = $views_key;
+				$args['orderby']  = 'meta_value_num';
+			} else {
+				$args['orderby'] = 'comment_count';
+			}
+			$args['order'] = 'DESC';
+		}
+
+		$query = new WP_Query( $args );
 
 		$items = array();
 		foreach ( $query->posts as $post ) {

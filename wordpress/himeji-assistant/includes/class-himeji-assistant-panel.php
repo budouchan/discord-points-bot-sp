@@ -35,7 +35,14 @@ abstract class Himeji_Assistant_Panel {
 	/**
 	 * ブロックエディタで読み込むパネルUIのスクリプト。
 	 *
-	 * @return array|null array( 'handle' => string, 'src' => string, 'deps' => string[] )
+	 * 'data' を指定すると wp_localize_script でJSへ渡される。
+	 *
+	 * @return array|null array(
+	 *     'handle' => string,
+	 *     'src'    => string,
+	 *     'deps'   => string[],
+	 *     'data'   => array( 'name' => string, 'value' => array ), // 省略可
+	 * )
 	 */
 	public function editor_script() {
 		return null;

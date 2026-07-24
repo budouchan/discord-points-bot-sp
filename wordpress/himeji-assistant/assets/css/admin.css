@@ -81,3 +81,33 @@
 .himeji-assistant__url:hover {
 	color: #2271b1;
 }
+
+.himeji-assistant__latlng {
+	font-size: 11px;
+	color: #949494;
+	font-family: monospace;
+	margin-bottom: 6px;
+}
+
+.himeji-assistant__actions {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+	align-items: center;
+}
+
+.himeji-assistant__snippet {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 6px 0;
+}
+
+.himeji-assistant__snippet .components-button {
+	align-self: flex-start;
+}
+
+.himeji-assistant__snippet-desc {
+	font-size: 11px;
+	color: #757575;
+}
