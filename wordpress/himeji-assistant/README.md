@@ -123,12 +123,16 @@ add_filter( 'himeji_assistant_snippets', function ( $items ) {
 ```
 himeji-assistant/
 ├── himeji-assistant.php                     # ブートストラップ + 内蔵パネル登録
+├── uninstall.php                            # プラグイン削除時のデータ後始末
+├── CHANGELOG.md                             # 変更履歴
 ├── includes/
 │   ├── class-himeji-assistant-core.php      # パネルレジストリ
 │   ├── class-himeji-assistant-panel.php     # パネル基底クラス
-│   ├── class-himeji-assistant-rest.php      # コアREST(パネル表示設定)
+│   ├── class-himeji-assistant-rest.php      # コアREST(パネル設定)
 │   ├── class-himeji-assistant-ai.php        # AIサービス層(プロバイダー登録制)
-│   ├── class-himeji-assistant-settings.php  # 設定画面(APIキー・AIプロバイダー)
+│   ├── class-himeji-assistant-usage.php     # パネル利用回数の記録
+│   ├── class-himeji-assistant-upgrade.php   # DBバージョン管理・マイグレーション
+│   ├── class-himeji-assistant-settings.php  # 設定画面(APIキー・AIプロバイダー・利用状況)
 │   ├── class-himeji-assistant-admin.php     # 編集画面への組み込み
 │   └── panels/
 │       ├── class-himeji-panel-link-card-search.php
@@ -267,3 +271,152 @@ add_filter( 'himeji_assistant_ai_providers', function ( $providers ) {
 | `himeji_assistant_views_meta_key` (filter) | 人気順で使う閲覧数メタキー |
 | `himeji_assistant_snippets` (filter) | よく使うショートコードの一覧 |
 | `himeji_assistant_card_label` (filter) | リンクカードの既定ラベル |
+
+## 保存データ一覧
+
+このプラグインがDBに保存するデータの全リスト。形式を変えるときは必ず
+マイグレーションを書くこと(後述「バージョンアップ時の注意」)。
+
+| 種類 | キー | 内容 |
+| --- | --- | --- |
+| option | `himeji_assistant_db_version` | データ形式のバージョン(マイグレーション判定用) |
+| option | `himeji_assistant_install_version` | 初回インストール時のバージョン |
+| option | `himeji_assistant_usage` | パネル利用回数(日別×パネル別、90日分) |
+| option | `himeji_assistant_gmaps_api_key` | Google Maps APIキー |
+| option | `himeji_assistant_ai_provider` | 使用するAIプロバイダーID |
+| user meta | `himeji_assistant_hidden_panels` | 非表示パネル(ユーザーごと) |
+| user meta | `himeji_assistant_favorite_panels` | お気に入りパネル(ユーザーごと) |
+| transient | `himeji_maps_*` | 地図検索キャッシュ(1時間) |
+
+カスタムテーブルは作らない方針。プラグイン削除時は `uninstall.php` が
+上記をすべて削除する(無効化では消えない)。
+
+---
+
+# 開発者向けドキュメント
+
+## 新しいパネルを追加する手順
+
+新機能 = 新パネル。コアには手を入れず、以下のチェックリストで追加する。
+
+1. **パネルID を決める** — 英小文字とハイフン(例: `pre-publish-check`)。
+   PHP と JS で同じIDを使う。**一度リリースしたIDは変更しない**
+   (お気に入り・非表示設定・利用統計がIDに紐づくため)
+2. **PHPクラスを作る** — `includes/panels/class-himeji-panel-<id>.php` に
+   `Himeji_Assistant_Panel` を継承したクラスを作成
+   - `id()` / `title()` / `description()` / `order()` を実装
+   - RESTが必要なら `register()` 内で `rest_api_init` にフックし、
+     名前空間は `Himeji_Assistant_REST::NAMESPACE`、権限は
+     `Himeji_Assistant_REST::can_use` を使う
+   - ショートコードを出す場合も `register()` で登録する
+3. **JSを作る** — `assets/js/panels/<id>.js` に UI を実装し、
+   `window.HimejiAssistant.registerPanel({ name, title, order, render })` で登録。
+   PHP側 `editor_script()` でこのファイルを宣言する(`data` でJSへ設定値を渡せる)
+4. **利用記録を入れる** — 挿入などの主要アクションで
+   `HimejiAssistant.trackUsage('<id>')` を呼ぶ
+   (`ui.ArticleList` を使う場合は `panel` プロパティ指定で自動)
+5. **登録する** — `himeji-assistant.php` の require と
+   `himeji_assistant_register_panels` アクションに1行ずつ追加
+   (別プラグインとして作る場合は、そのプラグインから同じアクションを使う)
+6. **AIを使う場合** — 直接APIを叩かず、必ず `HimejiAssistant.ai.complete()`
+   (JS)または `Himeji_Assistant_AI::active_provider()`(PHP)経由にする。
+   `ai.available` が false でも壊れないフォールバックを必ず用意する
+7. **ドキュメント** — README の搭載パネル表・REST表・フック表と
+   CHANGELOG.md を更新し、マイナーバージョンを上げる
+
+## バージョンアップ時の注意
+
+### バージョン番号
+
+セマンティック バージョニングに従う(詳細は CHANGELOG.md 冒頭)。
+リリース時は次の2箇所を必ず同時に更新する:
+
+- `himeji-assistant.php` ヘッダーの `Version:`
+- 定数 `HIMEJI_ASSISTANT_VERSION`
+
+`HIMEJI_ASSISTANT_VERSION` はJS/CSSのキャッシュバスターにも使われるため、
+これを上げ忘れるとライターのブラウザに古いJSが残る。
+
+### 保存データの形式を変えるとき
+
+「保存データ一覧」にあるデータの形式・キー名を変える場合は、
+**必ず `Himeji_Assistant_Upgrade::migrations()` にマイグレーションを追加**する:
+
+```php
+private static function migrations() {
+    return array(
+        '0.5.0' => array( __CLASS__, 'migrate_0_5_0' ),
+    );
+}
+
+/** 例: 利用統計をユーザー別集計に拡張する場合の移行 */
+public static function migrate_0_5_0() {
+    // 旧形式を読み、新形式に変換して保存する。
+    // 冪等に書くこと(2回実行されても壊れない)。
+    // 旧データは可能な限り捨てずに変換する。
+}
+```
+
+- マイグレーションは古い順に自動実行され、完了ごとに
+  `himeji_assistant_db_version` が進む(途中失敗しても次回続きから)
+- **冪等に書く**(多重実行ガードはあるが、それに頼らない)
+- 新規インストールではマイグレーションは走らない。
+  「新規インストール直後の形式」=「全マイグレーション適用後の形式」に
+  なるようコード側の初期値も揃えること
+
+### 後方互換性のルール
+
+メジャーバージョンを上げない限り、以下は**壊さない**:
+
+- **ショートコード**: `[himeji_card]` `[himeji_map]` の既存属性と出力の意味。
+  属性の追加はOK、削除・意味変更はNG(過去記事の表示が壊れるため。
+  これはメジャーアップでも原則やらない — 記事は資産)
+- **REST API**: 既存エンドポイントのパス・既存パラメータ・レスポンスの既存フィールド。
+  フィールド追加はOK。廃止するときは新エンドポイントを追加し、旧を1マイナー版
+  以上残してから消す
+- **パネルAPI**: `Himeji_Assistant_Panel` の既存メソッドのシグネチャ、
+  `himeji_assistant_register_panels` / `himeji_assistant_ai_providers` の呼び出し規約、
+  `window.HimejiAssistant.*` の公開関数
+- **パネルID・保存データのキー名**(変更するならマイグレーション必須)
+
+廃止予定のものは CHANGELOG に「非推奨」として1マイナー版以上前に予告する。
+
+### リリース前チェックリスト
+
+- [ ] `php -l` が全ファイル通る / `node --check` が全JS通る
+- [ ] バージョン2箇所(ヘッダー・定数)を更新した
+- [ ] データ形式を変えた場合、マイグレーションを追加した
+- [ ] CHANGELOG.md に変更内容を書いた
+- [ ] 検証環境で「旧バージョンからの上書き更新」を一度試した
+      (新規インストールだけでなく、更新経路を必ず通す)
+- [ ] ブロックエディタとクラシックエディタの両方で開いて動作確認した
+
+## 運用ルール
+
+### リリース手順
+
+1. CHANGELOG.md を確定し、バージョンを上げてコミット
+2. `himeji-assistant` フォルダをZIP化
+3. 検証環境(または管理者の1サイト)で上書きアップデートして動作確認
+4. 本番へ。プラグイン画面から「プラグインのアップロード → 置き換え」
+   (WP 5.5以降は既存プラグインの上書きインストールが可能)
+5. 更新後、設定 → 姫路の種アシスタント を開いてエラーが出ないこと・
+   `himeji_assistant_db_version` が新版になっていることを確認
+
+### 運用フェーズの方針(現在)
+
+- **機能追加は凍結中**。変更はバグ修正(パッチ版)のみ
+- 週1回程度、設定 → 姫路の種アシスタント の「パネル利用状況」を確認し、
+  記録を貯める。次の開発フェーズの優先順位はこのデータで決める
+- ライターからの要望は Issue やメモに貯めておき、その場では実装しない
+- 使われていないパネルは、削除ではなくまず「既定で非表示」を検討する
+  (削除はメジャーバージョンアップまで温存)
+
+### データの扱い
+
+- 利用統計はサイト全体の集計のみで、個人のライターを特定する記録はしない。
+  この方針を変える場合はライター全員に事前に伝えること
+- Google Maps APIキーはサーバー側でのみ使用され、ブラウザには渡らない。
+  キーのローテーション時は設定画面で差し替えるだけでよい
+- プラグインの「無効化」ではデータは消えない。「削除」で全データが消える
+  (uninstall.php)。アンインストール前に利用統計が必要ならメモしておく
